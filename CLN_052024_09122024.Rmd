@@ -1,0 +1,3076 @@
+---
+title: "Conservation_BayArea"
+author: "Cesar Estien"
+date: "2024-07-31"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Set up
+
+```{r cars}
+
+#########set wd
+setwd("/Users/cesarestien/Desktop/Projects/BayArea_Conservation")
+
+#install packages needed
+X <- c("cowplot", "ggplot2","dplyr", "car", "olsrr", "tidyverse", "RColorBrewer", "reshape2", "egg", "ecodist", "corrplot", "vegan", "glmmTMB", "lme4", "glmmTMB", "lmerTest", "MASS", "emmeans", "performance", "rptR", "coin")
+
+if (length(setdiff(X, rownames(installed.packages()))) > 0) {
+  install.packages(setdiff(X, rownames(installed.packages())))
+}
+
+#load packages
+invisible(lapply(X, library, character.only = TRUE))
+
+##pull in the dataframes 
+oakland_cln <- read.csv("OakPiedJoin_New.csv", header = T)
+sf_cln <- read.csv("SFJoin_New.csv", header = T)
+sj_cln <- read.csv("SanJoseJoin_New.csv", header = T)
+
+
+```
+
+# Clean / Arrange dataframe
+
+```{r pressure, echo=FALSE}
+
+#filter the dataframes 
+
+#retain just the iNat data, and the CLN category 
+
+oakland_clnf <- oakland_cln %>%
+  dplyr::select(c(coordinates_obscured,	species_guess,	scientific_name,	common_name,	iconic_taxon_name,	taxon_kingdom_name,	taxon_phylum_name,	taxon_class_name,	taxon_order_name,	taxon_family_name,	taxon_genus_name,	taxon_species_name, Final_CLN2, GreenSpace_Name, ACRES))
+
+##see how many have the coordinates obscured
+sum(oakland_clnf$coordinates_obscured == "FALSE") #80399
+
+sum(oakland_clnf$coordinates_obscured == "TRUE") #66
+
+66/80399 * 100 #makes up less than 1% of the data
+
+#removes the rows that have their coordinates obscured
+oakland_clnf <- oakland_clnf[!(oakland_clnf$coordinates_obscured == "TRUE"),]
+
+##ok now, for all the empty cells in the CLN, we'll put urban
+oakland_clnf <- oakland_clnf %>%
+  mutate(Final_CLN2 = ifelse(Final_CLN2 == "", "Urban", Final_CLN2))
+
+##now, i want to create a "contributes (C)", "does not contributes (DNC)" category in the same column
+
+unique(oakland_clnf$Final_CLN2) #[1] "Urban" "Rural Residential" "Essential"         "Contributor"    [5] "Important"         "Stream Valley"  
+
+##going to use case when 
+oakland_clnf <- oakland_clnf %>%
+  mutate(Final_CLN2 = case_when(
+    Final_CLN2 %in% c("Essential", "Contributor", "Important") ~ "C",
+    TRUE ~ "DNC"
+  ))
+
+#remove the first column
+oakland_clnf <- oakland_clnf[, -1]
+
+names(oakland_clnf)
+
+##repeat for SF and San Jose
+
+sf_clnf <- sf_cln %>%
+  dplyr::select(c(coordinates_obscured,	species_guess,	scientific_name,	common_name,	iconic_taxon_name,	taxon_kingdom_name,	taxon_phylum_name,	taxon_class_name,	taxon_order_name,	taxon_family_name,	taxon_genus_name,	taxon_species_name, Final_CLN2, GreenSpace_Name, ACRES))
+
+##see how many have the coordinates obscured
+sum(sf_clnf$coordinates_obscured == "FALSE") #225820
+
+sum(sf_clnf$coordinates_obscured == "TRUE") #2733
+
+2733/225820 *100  #makes up 1.2% of data in SF
+
+#removes the rows that have their coordinates obscured
+sf_clnf <- sf_clnf[!(sf_clnf$coordinates_obscured == "true"),]
+
+##ok now, for all the empty cells in the CLN, we'll put urban
+sf_clnf <- sf_clnf %>%
+  mutate(Final_CLN2 = ifelse(Final_CLN2 == "", "Urban", Final_CLN2))
+
+##now, i want to create a "contributes (C)", "does not contributes (DNC)" category in the same column
+
+unique(sf_clnf$Final_CLN2) #[1] "Urban" "Rural Residential" "Essential"         "Contributor"    [5] "Important"         "Stream Valley"  
+
+##going to use case when 
+sf_clnf <- sf_clnf %>%
+  mutate(Final_CLN2 = case_when(
+    Final_CLN2 %in% c("Essential", "Contributor", "Important") ~ "C",
+    TRUE ~ "DNC"
+  ))
+
+#remove the first column
+sf_clnf <- sf_clnf[, -1]
+
+names(sf_clnf)
+
+
+#### SAN JOSE
+sj_clnf <- sj_cln %>%
+  dplyr::select(c(coordinates_obscured,	species_guess,	scientific_name,	common_name,	iconic_taxon_name,	taxon_kingdom_name,	taxon_phylum_name,	taxon_class_name,	taxon_order_name,	taxon_family_name,	taxon_genus_name,	taxon_species_name, Final_CLN2, GreenSpace_Name, ACRES))
+
+##see how many have the coordinates obscured
+sum(sj_clnf$coordinates_obscured == "FALSE") #90799
+
+sum(sj_clnf$coordinates_obscured == "TRUE") #6797
+
+6797/90799 * 100 #makes up ~7.5% of the data
+
+#removes the rows that have their coordinates obscured
+sj_clnf <- sj_clnf[!(sj_clnf$coordinates_obscured == "true"),] 
+
+##ok now, for all the empty cells in the CLN, we'll put urban
+sj_clnf <- sj_clnf %>%
+  mutate(Final_CLN2 = ifelse(Final_CLN2 == "", "Urban", Final_CLN2))
+
+##now, i want to create a "contributes (C)", "does not contributes (DNC)" category in the same column
+
+unique(sj_clnf$Final_CLN2) #[1] "Urban" "Rural Residential" "Essential"         "Contributor"    [5] "Important"         "Stream Valley"  
+
+##going to use case when 
+sj_clnf <- sj_clnf %>%
+  mutate(Final_CLN2 = case_when(
+    Final_CLN2 %in% c("Essential", "Contributor", "Important",
+                      "") ~ "C",
+    TRUE ~ "DNC"
+  )) 
+
+#remove the first column
+sj_clnf <- sj_clnf[, -1]
+
+names(sj_clnf)
+
+###for each city's df, the column that greenspace represents a particular natural area. However, if there is no name / a value of NA, that means it fell outside a natural area. We need to remove those. We can remove this by removing the rows in Acres that have a value of NA
+
+##CHECK
+colSums(is.na(oakland_clnf)) #41885 NAs
+colSums(is.na(sf_clnf)) #71038
+colSums(is.na(sj_clnf)) #44535
+
+
+##REMOVE NAs
+oakland_clnf <- oakland_clnf %>%
+  filter(!is.na(oakland_clnf$ACRES))
+
+sf_clnf <- sf_clnf %>%
+  filter(!is.na(sf_clnf$ACRES))
+
+sj_clnf <- sj_clnf %>%
+  filter(!is.na(sj_clnf$ACRES))
+
+
+#NOTE LAKE MERRIT IS HAS DIFFERENCES IN CONSERVATION VALUE THROUGHOUT THE AREA. SO SOME AREAS ARE MARKED AS ESSENTIAL, WHILE OTHERS ARE NOT
+
+```
+
+#Prep Oakland for biodiversity
+
+```{r}
+##########################
+######
+###### OAKLAND
+#######################################
+
+## We will do biodiversity analyses on four levels: wildlife, plants, fungi, and ALL. before separating plant and fungi, i want to make sure there is enough fungi data
+
+#how many fungi rows are there
+sum(oakland_clnf$taxon_kingdom_name == "Fungi") #4096
+
+#that seems like a good amount of data. lets check how many rows have species level info
+
+# Count rows where kingdom is "fungi" and species or genus names are NA
+ sum(oakland_clnf$taxon_kingdom_name == "Fungi" &
+       (oakland_clnf$taxon_species_name == "")
+     ) #4 rows are missing species
+ 
+  sum(oakland_clnf$taxon_kingdom_name == "Fungi" &
+       (oakland_clnf$taxon_genus_name == "")
+     ) #0 are missing genus!
+  
+#repeat for insect!
+  
+#how many insect rows are there
+sum(oakland_clnf$taxon_class_name == "Insecta") #4071  
+
+ sum(oakland_clnf$taxon_class_name == "Insecta" &
+    (oakland_clnf$taxon_species_name == "")
+     ) #67 are missing genus
+ 
+ sum(oakland_clnf$taxon_class_name == "Insecta" &
+    (oakland_clnf$taxon_genus_name == "")
+     ) #16 are missing genus
+
+  sum(oakland_clnf$taxon_class_name == "Insecta" &
+    (oakland_clnf$taxon_family_name == "")
+     ) ##0 are missing family. insect at family level
+  
+  
+#this is pattern is likely true for all athropods 
+sum(oakland_clnf$taxon_phylum_name == "Arthropoda") #4763 
+
+  sum(oakland_clnf$taxon_phylum_name == "Arthropoda" &
+    (oakland_clnf$taxon_species_name == "")
+     ) #80 are missing genus
+
+  sum(oakland_clnf$taxon_phylum_name == "Arthropoda" &
+    (oakland_clnf$taxon_genus_name == "")
+     ) #19 are missing genus
+  
+  sum(oakland_clnf$taxon_phylum_name == "Arthropoda" &
+  (oakland_clnf$taxon_family_name == "")
+     ) #0 arthopods are missing family. do arthropods at family level?
+  
+
+#check plants
+sum(oakland_clnf$taxon_kingdom_name == "Plantae") #9443  
+
+  sum(oakland_clnf$taxon_kingdom_name == "Plantae" &
+     (oakland_clnf$taxon_species_name == "")
+     ) #87 are missing 
+  
+  sum(oakland_clnf$taxon_kingdom_name == "Plantae" &
+     (oakland_clnf$taxon_genus_name == "")
+     ) #0 are missing 
+  
+#check algae/kelp
+unique(oakland_clnf$taxon_kingdom_name) #chromista will get folded into plants
+
+sum(oakland_clnf$taxon_kingdom_name == "Chromista") #38 
+
+  sum(oakland_clnf$taxon_kingdom_name == "Chromista" &
+     (oakland_clnf$taxon_species_name == "")
+     ) #4 are missing 
+  
+ sum(oakland_clnf$taxon_kingdom_name == "Chromista" &
+     (oakland_clnf$taxon_genus_name == "")
+     ) #0 are missing 
+ 
+ #the unique species are tied to unique genuses here, we can try some inferring/correcting first then decide
+ 
+ ##separate
+fungi_oakland <- oakland_clnf[(oakland_clnf$taxon_kingdom_name == "Fungi"),] #fa
+plants_oakland <- oakland_clnf[(oakland_clnf$taxon_kingdom_name == "Plantae"),]
+algae_oakland <- oakland_clnf[(oakland_clnf$taxon_kingdom_name == "Chromista"),]
+
+#pull out animals
+wildlife_oakland <- oakland_clnf[(oakland_clnf$taxon_kingdom_name == "Animalia"),]
+
+### we need to disaggreagte the animal df becuase some animals, like molluscs, may not go down to the species, lets separate at the phylum level
+unique(wildlife_oakland$taxon_phylum_name) 
+
+#lets pull out arthropods because we already looked at that
+arthopod_oakland <- wildlife_oakland[(wildlife_oakland$taxon_phylum_name == "Arthropoda"),]
+
+#we'll bin chordata for and look within that
+vert_oakland <- wildlife_oakland[(wildlife_oakland$taxon_phylum_name == "Chordata"),]
+
+#i'm guessing the rest have missing species or genus so we'll bin those for now
+extra_oaklandwildlife <- wildlife_oakland[!(wildlife_oakland$taxon_phylum_name %in% c("Chordata", "Arthropoda")), ]
+
+sum(extra_oaklandwildlife$taxon_species_name == "") #4 #molluscs are missing some species, and same with rotifera. lets do that at the genus level then
+
+#some of the molluscs have both genus species in a column, just not in the species column so we can insert that
+extra_oaklandwildlife$taxon_species_name[(extra_oaklandwildlife$taxon_species_name == "") & extra_oaklandwildlife$scientific_name == "Mytilus edulis"] <- "Mytilus edulis"
+
+##now lets see what's missing species
+sum(extra_oaklandwildlife$taxon_species_name == "") #2
+
+#for rotifera, that should count. 
+#here the cellar slug is identified in other rows, but not in another we can add that
+extra_oaklandwildlife$taxon_species_name[(extra_oaklandwildlife$taxon_species_name == "") & extra_oaklandwildlife$species_guess == "Cellar Slugs"] <- "Limacus flavus"
+
+rotifera_oakland <- extra_oaklandwildlife[(extra_oaklandwildlife$taxon_phylum_name == "Rotifera"),]
+
+extra_oaklandwildlife2 <- extra_oaklandwildlife[!(extra_oaklandwildlife$taxon_phylum_name %in% c("Rotifera")), ]
+ 
+##because the last row missing (#Moon Jelly) has a similar genus as others, we will remove them as it has multiple speices
+sum(extra_oaklandwildlife2$taxon_species_name == "") #1
+
+extra_oaklandwildlife2 <- extra_oaklandwildlife2[!(extra_oaklandwildlife2$taxon_species_name == ""),]
+
+sum(extra_oaklandwildlife2$taxon_species_name == "") #0 ##ALL SPECIES
+
+#### VERTEBRATES
+#we'll bin chordata for and look within that
+sum(vert_oakland$taxon_species_name == "") # 115
+
+#check major classes
+unique(vert_oakland$taxon_class_name) 
+
+sum(vert_oakland$taxon_class_name == "Aves" & vert_oakland$taxon_species_name == "") #11
+sum(vert_oakland$taxon_class_name == "Reptilia" & vert_oakland$taxon_species_name == "") #1
+sum(vert_oakland$taxon_class_name == "Amphibia" & vert_oakland$taxon_species_name == "") #0
+sum(vert_oakland$taxon_class_name == "Mammalia" & vert_oakland$taxon_species_name == "") #0
+sum(vert_oakland$taxon_class_name == "Actinopterygii" & vert_oakland$taxon_species_name == "") #3
+sum(vert_oakland$taxon_class_name == "Ascidiacea" & vert_oakland$taxon_species_name == "") #0
+sum(vert_oakland$taxon_class_name == "Elasmobranchii" & vert_oakland$taxon_species_name == "") #0
+
+##so lets move the classes in their own dataframe
+
+birds_oakland <- vert_oakland[(vert_oakland$taxon_class_name == "Aves"),]
+amphib_oakland <- vert_oakland[(vert_oakland$taxon_class_name == "Amphibia"),]
+reptile_oakland <- vert_oakland[(vert_oakland$taxon_class_name == "Reptilia"),]
+mammal_oakland <- vert_oakland[(vert_oakland$taxon_class_name == "Mammalia"),]
+actinop_oakland <- vert_oakland[(vert_oakland$taxon_class_name == "Actinopterygii"),]
+ascid_oakland <- vert_oakland[(vert_oakland$taxon_class_name == "Ascidiacea"),]
+elasmo_oakland <- vert_oakland[(vert_oakland$taxon_class_name == "Elasmobranchii"),]
+
+##elasmo, mammals, ascid are good to go. lets work with the samll groups for now
+
+##so in actinop, two of three missing rows have the species name just not in the taxon_species column so lets move it over
+
+unique(actinop_oakland$scientific_name)
+
+actinop_oakland$taxon_species_name[(actinop_oakland$taxon_species_name == "") & actinop_oakland$scientific_name == "Lepomis macrochirus × cyanellus"] <- "Lepomis macrochirus × cyanellus"
+
+#common sunfish is left, which has no species information. its not a unique genus either so we'll remove it 
+actinop_oakland <- actinop_oakland[!(actinop_oakland$taxon_species_name == ""),]
+
+sum(actinop_oakland$taxon_species_name == "") #0
+
+#reptiles
+
+#the western alligator lizard is idenitifed in one but not the other we can fix that
+
+reptile_oakland$taxon_species_name[(reptile_oakland$taxon_species_name == "") & reptile_oakland$species_guess == "Western Alligator Lizards"] <- "Elgaria multicarinata"
+
+sum(reptile_oakland$taxon_species_name == "") #0
+
+##birds
+
+#i see a couple instances where scientific name has the species, its just not in the taxon_species column
+sum(birds_oakland$taxon_species_name == "") #111
+
+birds_oakland$taxon_species_name[(birds_oakland$taxon_species_name == "") & birds_oakland$scientific_name == "Larus glaucescens × occidentalis"] <- "Larus glaucescens × occidentalis"
+
+birds_oakland$taxon_species_name[(birds_oakland$taxon_species_name == "") & birds_oakland$scientific_name == "Anser anser × cygnoides"] <- "Anser anser × cygnoides"
+
+birds_oakland$taxon_species_name[(birds_oakland$taxon_species_name == "") & birds_oakland$scientific_name == "Anas platyrhynchos × cairina moschata"] <- "Anas platyrhynchos × cairina moschata"
+
+##down to 111 
+birds_oakland$taxon_species_name[(birds_oakland$taxon_species_name == "") & birds_oakland$scientific_name == "Aythya affinis × collaris"] <- "Aythya affinis × collaris"
+
+birds_oakland$taxon_species_name[(birds_oakland$taxon_species_name == "") & birds_oakland$scientific_name == "Zonotrichia leucophrys × atricapilla"] <- "Zonotrichia leucophrys × atricapilla"
+
+birds_oakland$taxon_species_name[(birds_oakland$taxon_species_name == "") & birds_oakland$scientific_name == "Anser anser domesticus × cygnoides domesticus"] <- "Anser anser domesticus × cygnoides domesticus"
+
+birds_oakland$taxon_species_name[(birds_oakland$taxon_species_name == "") & birds_oakland$scientific_name == "Sphyrapicus ruber × nuchalis"] <- "Sphyrapicus ruber × nuchalis"
+
+birds_oakland$taxon_species_name[(birds_oakland$taxon_species_name == "") & birds_oakland$scientific_name == "Larus argentatus × glaucescens"] <- "Larus argentatus × glaucescens"
+
+birds_oakland$taxon_species_name[(birds_oakland$taxon_species_name == "") & birds_oakland$scientific_name == "Anser caerulescens × rossii"] <- "Anser caerulescens × rossii"
+
+birds_oakland$taxon_species_name[(birds_oakland$taxon_species_name == "") & birds_oakland$scientific_name == "Bucephala islandica × Lophodytes cucullatus"] <- "Bucephala islandica × Lophodytes cucullatus"
+
+#97. that looks like the best we can get. a quick looks tell me some of these aren't unique genuses
+
+length(unique(birds_oakland$taxon_genus_name)) #146
+
+#we can do a quick test
+test <- birds_oakland[!(birds_oakland$taxon_species_name == ""),]
+
+length(unique(test$taxon_genus_name)) #146 #same number of genus so we can filter out the ones that are missing species. we can do it at the genus level
+
+birds_oakland <- birds_oakland[!(birds_oakland$taxon_species_name == ""),]
+
+sum(birds_oakland$taxon_species_name == "") #0
+
+##going to do this for fungi as well, since the number is abit low for missing speices
+
+fungi_oakland$taxon_species_name[(fungi_oakland$taxon_species_name == "") & fungi_oakland$scientific_name == "Entomophthora muscae"] <- "Entomophthora muscae"
+
+fungi_oakland$taxon_species_name[(fungi_oakland$taxon_species_name == "") & fungi_oakland$scientific_name == "Hesperomyces virescens"] <- "Hesperomyces virescens"
+
+fungi_oakland$taxon_species_name[(fungi_oakland$taxon_species_name == "") & fungi_oakland$common_name == "Amanita ser. Pantherinae"] <- "Amanita pantherina"
+
+fungi_oakland$taxon_species_name[(fungi_oakland$taxon_species_name == "") & fungi_oakland$common_name == "Amanita sect. Vaginatae"] <- "Amanita vaginatae"
+
+sum(fungi_oakland$taxon_species_name == "") #2
+
+fungi_oakland$taxon_species_name[(fungi_oakland$taxon_species_name == "") & fungi_oakland$common_name == "Oysterlings"] <- "Unknown_3"
+
+fungi_oakland$taxon_species_name[(fungi_oakland$taxon_species_name == "") & fungi_oakland$common_name == "rock shield lichens"] <- "Unknown_4"
+
+sum(fungi_oakland$taxon_species_name == "") #1
+
+#fungi at species level!
+
+##lets just do this with arhtropods as well
+sum(arthopod_oakland$taxon_species_name == "") #80 rn 
+
+arthopod_oakland$taxon_species_name[(arthopod_oakland$taxon_species_name == "") & arthopod_oakland$scientific_name == "Forficula auricularia"] <- "Forficula auricularia"
+
+arthopod_oakland$taxon_species_name[(arthopod_oakland$taxon_species_name == "") & arthopod_oakland$scientific_name == "Copestylum marginatum"] <- "Copestylum marginatum"
+
+arthopod_oakland$taxon_species_name[(arthopod_oakland$taxon_species_name == "") & arthopod_oakland$scientific_name == "Copestylum violaceum"] <- "Copestylum violaceum"
+
+arthopod_oakland$taxon_species_name[(arthopod_oakland$taxon_species_name == "") & arthopod_oakland$scientific_name == "Eupeodes americanus"] <- "Eupeodes americanus"
+
+arthopod_oakland$taxon_species_name[(arthopod_oakland$taxon_species_name == "") & arthopod_oakland$scientific_name == "Lygaeus kalmii/reclivatus"] <- "Lygaeus kalmii/reclivatus"
+
+arthopod_oakland$taxon_species_name[(arthopod_oakland$taxon_species_name == "") & arthopod_oakland$scientific_name == "Acalymma trivittatum"] <- "Acalymma trivittatum"
+
+sum(arthopod_oakland$taxon_species_name == "") #72 rn. best do to family for arthropods!
+
+sum(arthopod_oakland$taxon_genus_name == "") #19 for genus. we could do at family level?
+sum(arthopod_oakland$taxon_family_name == "") #0
+#-> perhaps family and genus?
+
+###PLANTS
+sum(plants_oakland$taxon_genus_name == "") 
+
+###ALGAE
+sum(algae_oakland$taxon_genus_name == "") #0
+sum(algae_oakland$taxon_species_name == "")
+
+algae_oakland$taxon_species_name[(algae_oakland$taxon_species_name == "") & algae_oakland$taxon_genus_name == "Achlya"] <- "Unknown_5"
+
+algae_oakland$taxon_species_name[(algae_oakland$taxon_species_name == "") & algae_oakland$taxon_genus_name == "Euplotes"] <- "Unknown_6"
+
+algae_oakland$taxon_species_name[(algae_oakland$taxon_species_name == "") & algae_oakland$taxon_genus_name == "Rimostrombidium"] <- "Unknown_7"
+
+algae_oakland <- algae_oakland[!(algae_oakland$taxon_species_name == ""),]
+
+###all the dataframes
+
+#wildlife
+actinop_oakland #species
+arthopod_oakland #family level
+amphib_oakland #species
+ascid_oakland #species
+birds_oakland #species
+elasmo_oakland #species
+extra_oaklandwildlife2 #species
+mammal_oakland #species, then add 1 for the unique bat genus
+reptile_oakland #species
+rotifera_oakland #genus (only 1)
+
+#non-widlife
+algae_oakland #genus level
+fungi_oakland #species
+plants_oakland #genus level
+
+##ok now for ease, we're going to re-combine the the wildlife into one big dataframe for species biodiveristy. arthropod will be distinct. rotifera will be distinct to help for now
+
+rotifera_oakland$taxon_species_name[(rotifera_oakland$taxon_species_name == "") & rotifera_oakland$taxon_genus_name == "Mytilina"] <- "Unknown_77"
+
+animal_oak <- rbind(actinop_oakland, amphib_oakland, ascid_oakland, birds_oakland, elasmo_oakland, extra_oaklandwildlife2, mammal_oakland, reptile_oakland, rotifera_oakland)
+#for animal oak, we will add a +1 to the DNC category because of where the bat is (and its only identified to the genus)
+
+###########
+########### final biodiversity dataframes for oakland
+
+#wildlife
+arthopod_oakland #family level
+animal_oak #species
+
+#non-wildlife
+plants_oakland #genus level
+fungi_oakland #species
+algae_oakland #species
+```
+
+#Prep SF for biodiversity analysis
+
+```{r}
+##########################
+######
+###### SAN FRANCISCO
+######
+#######################################
+#how many fungi rows are there
+sum(sf_clnf$taxon_kingdom_name == "Fungi") #8143
+
+#that seems like a good amount of data. lets check how many rows have species level info
+# Count rows where kingdom is "fungi" and species or genus names are NA
+ sum(sf_clnf$taxon_kingdom_name == "Fungi" &
+       (sf_clnf$taxon_species_name == "")
+     ) #13 rows are missing species
+ 
+  sum(sf_clnf$taxon_kingdom_name == "Fungi" &
+       (sf_clnf$taxon_genus_name == "")
+     ) #0 are missing genus!
+  
+#repeat for insect! to be consistent with Oakland, we will do athropods at family level
+sum(sf_clnf$taxon_phylum_name == "Arthropoda") #18453 
+  
+  sum(sf_clnf$taxon_phylum_name == "Arthropoda" &
+  (sf_clnf$taxon_family_name == "")
+     ) #0 arthopods are missing family. do arthropods at family level
+  
+
+#check plants
+sum(sf_clnf$taxon_kingdom_name == "Plantae") #84600  
+  
+  sum(sf_clnf$taxon_kingdom_name == "Plantae" &
+     (sf_clnf$taxon_genus_name == "")
+     ) #1 are missing (we'll fix later or remove the 1 missing)
+  
+#check algae/kelp
+unique(sf_clnf$taxon_kingdom_name) #chromista will get folded into plants
+
+sum(sf_clnf$taxon_kingdom_name == "Chromista") #284 
+
+  sum(sf_clnf$taxon_kingdom_name == "Chromista" &
+     (sf_clnf$taxon_species_name == "")
+     ) #0 is missing! we can fix later
+  
+ sum(sf_clnf$taxon_kingdom_name == "Chromista" &
+     (sf_clnf$taxon_genus_name == "")
+     ) #0 are missing 
+ #the unique species are tied to unique genuses here
+  
+##so arthopofs (insects, arachnids, etc.) will be done at the family level
+##fungi at the genus level
+## plants species
+##algae at genus
+fungi_sf <- sf_clnf[(sf_clnf$taxon_kingdom_name == "Fungi"),]
+plants_sf <- sf_clnf[(sf_clnf$taxon_kingdom_name == "Plantae"),]
+algae_sf <- sf_clnf[(sf_clnf$taxon_kingdom_name == "Chromista"),]
+
+#pull out animals
+wildlife_sf <- sf_clnf[(sf_clnf$taxon_kingdom_name == "Animalia"),]
+
+### we need to disaggreagte the animal df becuase some animals, like molluscs, may not go down to the species, lets separate at the phylum level
+unique(wildlife_sf$taxon_phylum_name) 
+
+#lets pull out arthropods because we already looked at that
+arthopod_sf <- wildlife_sf[(wildlife_sf$taxon_phylum_name == "Arthropoda"),]
+
+#we'll bin chordata for and look within that
+vert_sf <- wildlife_sf[(wildlife_sf$taxon_phylum_name == "Chordata"),]
+
+#i'm guessing the rest have missing species or genus so we'll bin those for now
+extra_sfwildlife <- wildlife_sf[!(wildlife_sf$taxon_phylum_name %in% c("Chordata", "Arthropoda")), ]
+
+sum(extra_sfwildlife$taxon_species_name == "") #80 
+
+#some of the molluscs have both genus species in a column, just not in the species column so we can insert that
+extra_sfwildlife$taxon_species_name[(extra_sfwildlife$taxon_species_name == "") & extra_sfwildlife$scientific_name == "Mytilus edulis"] <- "Mytilus edulis"
+
+extra_sfwildlife$taxon_species_name[(extra_sfwildlife$taxon_species_name == "") & extra_sfwildlife$scientific_name == "Lottia digitalis"] <- "Lottia digitalis"
+
+##lots of banana slugs with no species. call this unknown_1
+extra_sfwildlife$taxon_species_name[(extra_sfwildlife$taxon_species_name == "") & extra_sfwildlife$species_guess == "Banana Slugs"] <- "Unknown_1"
+
+extra_sfwildlife$taxon_species_name[(extra_sfwildlife$taxon_species_name == "") & extra_sfwildlife$species_guess == "布氏香蕉蛞蝓"] <- "Unknown_1"
+
+extra_sfwildlife$taxon_species_name[(extra_sfwildlife$taxon_species_name == "") & extra_sfwildlife$species_guess == "Oxychilus"] <- "Unknown_2"
+
+extra_sfwildlife$taxon_species_name[(extra_sfwildlife$taxon_species_name == "") & extra_sfwildlife$species_guess == "璃螺属"] <- "Unknown_2"
+
+extra_sfwildlife$taxon_species_name[(extra_sfwildlife$taxon_species_name == "") & extra_sfwildlife$species_guess == "Ariolimax buttoni"] <- "Ariolimax buttoni"
+
+extra_sfwildlife$taxon_species_name[(extra_sfwildlife$taxon_species_name == "") & extra_sfwildlife$common_name == "Threeband Slugs"] <- "Unknown_3"
+
+extra_sfwildlife$taxon_species_name[(extra_sfwildlife$taxon_species_name == "") & extra_sfwildlife$common_name == "Anthopleura"] <- "Unknown_4"
+
+extra_sfwildlife$taxon_species_name[(extra_sfwildlife$taxon_species_name == "") & extra_sfwildlife$scientific_name == "Cumanotus"] <- "Unknown_5"
+
+extra_sfwildlife$taxon_species_name[(extra_sfwildlife$taxon_species_name == "") & extra_sfwildlife$scientific_name == "Kobeltia"] <- "Unknown_6"
+
+extra_sfwildlife$taxon_species_name[(extra_sfwildlife$taxon_species_name == "") & extra_sfwildlife$scientific_name == "Anthopleura"] <- "Unknown_7"
+
+extra_sfwildlife$taxon_species_name[(extra_sfwildlife$taxon_species_name == "") & extra_sfwildlife$scientific_name == "Aglaophenia"] <- "Unknown_8"
+
+extra_sfwildlife$taxon_species_name[(extra_sfwildlife$taxon_species_name == "") & extra_sfwildlife$scientific_name == "Alitta"] <- "Unknown_9"
+
+sum(extra_sfwildlife$taxon_species_name == "") #0
+
+#all cleaned
+
+#### VERTEBRATES
+#we'll bin chordata for and look within that
+sum(vert_sf$taxon_species_name == "") #432
+
+#check major classes
+unique(vert_sf$taxon_class_name) 
+
+sum(vert_sf$taxon_class_name == "Aves" & vert_sf$taxon_species_name == "") #416
+sum(vert_sf$taxon_class_name == "Reptilia" & vert_sf$taxon_species_name == "") #9
+sum(vert_sf$taxon_class_name == "Amphibia" & vert_sf$taxon_species_name == "") #0
+sum(vert_sf$taxon_class_name == "Mammalia" & vert_sf$taxon_species_name == "") #4
+sum(vert_sf$taxon_class_name == "Actinopterygii" & vert_sf$taxon_species_name == "") #3
+sum(vert_sf$taxon_class_name == "Ascidiacea" & vert_sf$taxon_species_name == "") #0
+sum(vert_sf$taxon_class_name == "Elasmobranchii" & vert_sf$taxon_species_name == "") #0
+sum(vert_sf$taxon_class_name == "Petromyzonti" & vert_sf$taxon_species_name == "") #0
+sum(vert_sf$taxon_class_name == "Thaliacea" & vert_sf$taxon_species_name == "") #0
+
+##so lets move the classes in their own dataframe
+birds_sf <- vert_sf[(vert_sf$taxon_class_name == "Aves"),]
+amphib_sf <- vert_sf[(vert_sf$taxon_class_name == "Amphibia"),]
+reptile_sf <- vert_sf[(vert_sf$taxon_class_name == "Reptilia"),]
+mammal_sf <- vert_sf[(vert_sf$taxon_class_name == "Mammalia"),]
+actinop_sf <- vert_sf[(vert_sf$taxon_class_name == "Actinopterygii"),]
+ascid_sf <- vert_sf[(vert_sf$taxon_class_name == "Ascidiacea"),]
+elasmo_sf <- vert_sf[(vert_sf$taxon_class_name == "Elasmobranchii"),]
+petro_sf <- vert_sf[(vert_sf$taxon_class_name == "Petromyzonti"),]
+thal_sf <- vert_sf[(vert_sf$taxon_class_name == "Thaliacea"),]
+
+##amphibians, elasmo, ascid, thal, and petro are good to go. lets work with the samll groups for now
+
+##so in actinop, two of three missing rows have the species name just not in the taxon_species column so lets move it over
+
+unique(actinop_sf$scientific_name)
+
+actinop_sf$taxon_species_name[(actinop_sf$taxon_species_name == "") & actinop_sf$scientific_name == "Cyprinus carpio × Carassius auratus"] <- "Cyprinus carpio × Carassius auratus"
+
+actinop_sf$taxon_species_name[(actinop_sf$taxon_species_name == "") & actinop_sf$species_guess == "Porichthys"] <- "Unknown_10"
+
+actinop_sf$taxon_species_name[(actinop_sf$taxon_species_name == "") & actinop_sf$scientific_name == "Pterygoplichthys"] <- "Unknown_11"
+
+sum(actinop_sf$taxon_species_name == "") #0
+
+###onto mammals
+sum(mammal_sf$taxon_species_name == "") #4. ##the ones missing are squirrels and a rat. there are already squirrels in here and rats, so its unclear if its the same species
+
+mammal_sf <-mammal_sf[!(mammal_sf$taxon_species_name == ""),]
+
+#reptiles
+
+#the western alligator lizard is idenitifed in one but not the other we can fix that
+
+reptile_sf$taxon_species_name[(reptile_sf$taxon_species_name == "") & reptile_sf$species_guess == "Western Alligator Lizards"] <- "Elgaria multicarinata"
+
+reptile_sf$taxon_species_name[(reptile_sf$taxon_species_name == "") & reptile_sf$species_guess == "Alligator Lizards"] <- "Elgaria coerulea"
+
+reptile_sf$taxon_species_name[(reptile_sf$taxon_species_name == "") & reptile_sf$species_guess == "Toothy Skinks"] <- "Unknown_12"
+
+reptile_sf$taxon_species_name[(reptile_sf$taxon_species_name == "") & reptile_sf$scientific_name == "Deirochelyinae"] <- "Unknown_13"
+
+sum(reptile_sf$taxon_species_name == "") #0
+
+##birds
+
+#i see a couple instances where scientific name has the species, its just not in the taxon_species column
+sum(birds_sf$taxon_species_name == "") #416
+
+birds_sf$taxon_species_name[(birds_sf$taxon_species_name == "") & birds_sf$scientific_name == "Larus glaucescens × occidentalis"] <- "Larus glaucescens × occidentalis"
+
+birds_sf$taxon_species_name[(birds_sf$taxon_species_name == "") & birds_sf$scientific_name == "Anser anser × cygnoides"] <- "Anser anser × cygnoides"
+
+birds_sf$taxon_species_name[(birds_sf$taxon_species_name == "") & birds_sf$scientific_name == "Anas platyrhynchos × cairina moschata"] <- "Anas platyrhynchos × cairina moschata"
+
+birds_sf$taxon_species_name[(birds_sf$taxon_species_name == "") & birds_sf$scientific_name == "Aythya affinis × collaris"] <- "Aythya affinis × collaris"
+
+birds_sf$taxon_species_name[(birds_sf$taxon_species_name == "") & birds_sf$scientific_name == "Zonotrichia leucophrys × atricapilla"] <- "Zonotrichia leucophrys × atricapilla"
+
+birds_sf$taxon_species_name[(birds_sf$taxon_species_name == "") & birds_sf$scientific_name == "Anser anser domesticus × cygnoides domesticus"] <- "Anser anser domesticus × cygnoides domesticus"
+
+birds_sf$taxon_species_name[(birds_sf$taxon_species_name == "") & birds_sf$scientific_name == "Sphyrapicus ruber × nuchalis"] <- "Sphyrapicus ruber × nuchalis"
+
+birds_sf$taxon_species_name[(birds_sf$taxon_species_name == "") & birds_sf$scientific_name == "Larus argentatus × glaucescens"] <- "Larus argentatus × glaucescens"
+
+birds_sf$taxon_species_name[(birds_sf$taxon_species_name == "") & birds_sf$scientific_name == "Anser caerulescens × rossii"] <- "Anser caerulescens × rossii"
+
+birds_sf$taxon_species_name[(birds_sf$taxon_species_name == "") & birds_sf$scientific_name == "Bucephala islandica × Lophodytes cucullatus"] <- "Bucephala islandica × Lophodytes cucullatus"
+
+birds_sf$taxon_species_name[(birds_sf$taxon_species_name == "") & birds_sf$scientific_name == "Setophaga townsendi × occidentalis"] <- "Setophaga townsendi × occidentalis"
+
+birds_sf$taxon_species_name[(birds_sf$taxon_species_name == "") & birds_sf$scientific_name == "Larus argentatus × hyperboreus"] <- "Larus argentatus × hyperboreus"
+
+birds_sf$taxon_species_name[(birds_sf$taxon_species_name == "") & birds_sf$scientific_name == "Larus glaucescens × hyperboreus"] <- "Larus glaucescens × hyperboreus"
+
+birds_sf$taxon_species_name[(birds_sf$taxon_species_name == "") & birds_sf$scientific_name == "Aechmophorus occidentalis × clarkii"] <- "Aechmophorus occidentalis × clarkii"
+
+birds_sf$taxon_species_name[(birds_sf$taxon_species_name == "") & birds_sf$scientific_name == "Bucephala clangula × islandica"] <- "Bucephala clangula × islandica"
+
+birds_sf$taxon_species_name[(birds_sf$taxon_species_name == "") & birds_sf$scientific_name == "Setophaga coronata × townsendi"] <- "Setophaga coronata × townsendi"
+
+sum(birds_sf$taxon_species_name == "") #290
+
+#290 that looks like the best we can get. a quick looks tell me some of these aren't unique genuses
+
+length(unique(birds_sf$taxon_genus_name)) #198
+
+#we can do a quick test
+test <- birds_sf[!(birds_sf$taxon_species_name == ""),]
+
+length(unique(test$taxon_genus_name)) #198 #same number of genus so we can filter out the species column
+
+length(unique(test$taxon_species_name))
+
+birds_sf <- birds_sf[!(birds_sf$taxon_species_name == ""),]
+
+sum(birds_sf$taxon_species_name == "") #0
+
+##going to do this for fungi as well, since the number is abit low for missing speices
+
+fungi_sf$taxon_species_name[(fungi_sf$taxon_species_name == "") & fungi_sf$scientific_name == "Entomophthora muscae"] <- "Entomophthora muscae"
+
+fungi_sf$taxon_species_name[(fungi_sf$taxon_species_name == "") & fungi_sf$scientific_name == "Hesperomyces virescens"] <- "Hesperomyces virescens"
+
+fungi_sf$taxon_species_name[(fungi_sf$taxon_species_name == "") & fungi_sf$common_name == "Amanita ser. Pantherinae"] <- "Amanita pantherina"
+
+fungi_sf$taxon_species_name[(fungi_sf$taxon_species_name == "") & fungi_sf$common_name == "Amanita sect. Vaginatae"] <- "Amanita vaginatae"
+
+
+fungi_sf$taxon_species_name[(fungi_sf$taxon_species_name == "") & fungi_sf$scientific_name == "Russula"] <- "Unknown_14"
+
+sum(fungi_sf$taxon_species_name == "") #11
+
+fungi_sf$taxon_species_name[(fungi_sf$taxon_species_name == "") & fungi_sf$scientific_name == "Phycomyces"] <- "Unknown_15"
+
+fungi_sf$taxon_species_name[(fungi_sf$taxon_species_name == "") & fungi_sf$common_name == "Coprinellus sect. Domestici"] <- "Coprinellus fomestici"
+
+fungi_sf$taxon_species_name[(fungi_sf$taxon_species_name == "") & fungi_sf$common_name == "Coprinellus sect. Micacei"] <- "Coprinellus micacei"
+
+fungi_sf$taxon_species_name[(fungi_sf$taxon_species_name == "") & fungi_sf$scientific_name == "Inocybe lilacina"] <- "Inocybe lilacina"
+
+sum(fungi_sf$taxon_species_name == "") #10
+
+###beard lichens, there are two with species information. unclear what kind of bear lichen so we can remove that one. same with the bushy lichen
+##Agrocybe can be removed as well so we cant find out if its different from the one reported
+##Phycomyces, we will add a "Unknown_15" because although we don't know what it is, it was reported without a species in DNC and reported with species in C. so it may just be one of those species. we should account for that.
+##moss bell and ruffle licehn can get filtered out for similar reasons as above
+#
+fungi_sf <- fungi_sf[!(fungi_sf$taxon_species_name == ""),]
+
+#fungi at species level!
+
+##check plant
+sum(plants_sf$taxon_genus_name == "") #1
+
+plants_sf$taxon_genus_name[(plants_sf$taxon_genus_name == "") & plants_sf$species_guess == "Trifolieae"] <- "Unknown_16"
+
+plants_sf$taxon_genus_name[(plants_sf$taxon_genus_name == "") & plants_sf$species_guess == "Maleae"] <- "Unknown_17"
+
+sum(plants_sf$taxon_genus_name == "") #0
+
+###ALGAE
+
+unique(algae_sf$taxon_species_name)
+sum(algae_sf$taxon_genus_name == "") #0
+sum(algae_sf$taxon_species_name == "")
+
+###all the dataframes
+
+#wildlife
+actinop_sf #species
+arthopod_sf #family level
+amphib_sf #species
+ascid_sf #species
+birds_sf #species
+elasmo_sf #species
+extra_sfwildlife #species
+mammal_sf #species, then add 1 for the unique bat genus
+petro_sf
+reptile_sf #species
+thal_sf
+
+#non-widlife
+algae_sf #genus level
+fungi_sf #species
+plants_sf #genus level
+
+##ok now for ease, we're going to re-combine the the wildlife into one big dataframe for species biodiveristy. arthropod will be distinct. rotifera will be distinct
+animal_sfr <- rbind(actinop_sf, amphib_sf, ascid_sf, birds_sf, elasmo_sf, extra_sfwildlife, mammal_sf, petro_sf, reptile_sf, thal_sf)
+#for animal sfr, we will add a +1 to the DNC category because of where the bat is (and its only identified to the genus)
+
+plants_sfr <- rbind(plants_sf, algae_sf)
+
+###########
+########### final biodiversity dataframes for sf
+
+#wildlife
+arthopod_sf #family level
+animal_sfr #species. add a +1 to the DNC category because of where the bat is
+
+#non-wildlife
+plants_sf #genus level
+fungi_sf #species
+algae_sf #species
+```
+
+#Prep SJ for biodiversity
+
+```{r}
+###############
+#######
+###### SAN JOSE
+#######
+############
+
+#how many fungi rows are there
+sum(sj_clnf$taxon_kingdom_name == "Fungi") #764
+
+#that seems like a good amount of data. lets check how many rows have species level info
+# Count rows where kingdom is "fungi" and species or genus names are NA
+ sum(sj_clnf$taxon_kingdom_name == "Fungi" &
+       (sj_clnf$taxon_species_name == "")
+     ) #1 rows are missing species
+ 
+  sum(sj_clnf$taxon_kingdom_name == "Fungi" &
+       (sj_clnf$taxon_genus_name == "")
+     ) #0 are missing genus! lets do fungi at the genus level
+  
+#mirror approach above 
+
+#this is pattern is likely true for all athropods 
+sum(sj_clnf$taxon_phylum_name == "Arthropoda") #17164 
+  
+  sum(sj_clnf$taxon_phylum_name == "Arthropoda" &
+  (sj_clnf$taxon_family_name == "")
+     ) #0 arthopods are missing family
+  
+
+#check plants
+sum(sj_clnf$taxon_kingdom_name == "Plantae") #16688  
+  
+  sum(sj_clnf$taxon_kingdom_name == "Plantae" &
+     (sj_clnf$taxon_genus_name == "")
+     ) #1 is missing (we'll fix later or remove the two missing)
+  
+#check algae/kelp
+unique(sj_clnf$taxon_kingdom_name) #chromista will get folded into plants
+
+sum(sj_clnf$taxon_kingdom_name == "Chromista") #10 
+
+  sum(sj_clnf$taxon_kingdom_name == "Chromista" &
+     (sj_clnf$taxon_species_name == "")
+     ) #1 is missing! we can fix later
+  
+ sum(sj_clnf$taxon_kingdom_name == "Chromista" &
+     (sj_clnf$taxon_genus_name == "")
+     ) #0 are missing 
+ #the unique species are tied to unique genuses here
+  
+##so arthopofs (insects, arachnids, etc.) will be done at the family level
+##fungi at the genus level
+## plants species
+##algae at genus
+fungi_sj <- sj_clnf[(sj_clnf$taxon_kingdom_name == "Fungi"),]
+plants_sj <- sj_clnf[(sj_clnf$taxon_kingdom_name == "Plantae"),]
+algae_sj <- sj_clnf[(sj_clnf$taxon_kingdom_name == "Chromista"),]
+
+#pull out animals
+wildlife_sj <- sj_clnf[(sj_clnf$taxon_kingdom_name == "Animalia"),]
+
+### we need to disaggreagte the animal df becuase some animals, like molluscs, may not go down to the species, lets separate at the phylum level
+unique(wildlife_sj$taxon_phylum_name) 
+
+#lets pull out arthropods because we already looked at that
+arthopod_sj <- wildlife_sj[(wildlife_sj$taxon_phylum_name == "Arthropoda"),]
+
+#we'll bin chordata for and look within that
+vert_sj <- wildlife_sj[(wildlife_sj$taxon_phylum_name == "Chordata"),]
+
+#i'm guessing the rest have missing species or genus so we'll bin those for now
+extra_sjwildlife <- wildlife_sj[!(wildlife_sj$taxon_phylum_name %in% c("Chordata", "Arthropoda")), ]
+
+sum(extra_sjwildlife$taxon_species_name == "") #0 
+
+#all cleaned
+
+#ARTHROPODS
+sum(arthopod_sj$taxon_family_name == "") 
+
+#### VERTEBRATES
+#we'll bin chordata for and look within that
+sum(vert_sj$taxon_species_name == "") #111
+
+#check major classes
+unique(vert_sj$taxon_class_name) 
+
+sum(vert_sj$taxon_class_name == "Aves" & vert_sj$taxon_species_name == "") #110
+sum(vert_sj$taxon_class_name == "Reptilia" & vert_sj$taxon_species_name == "") #1
+sum(vert_sj$taxon_class_name == "Amphibia" & vert_sj$taxon_species_name == "") #0
+sum(vert_sj$taxon_class_name == "Mammalia" & vert_sj$taxon_species_name == "") #0
+sum(vert_sj$taxon_class_name == "Actinopterygii" & vert_sj$taxon_species_name == "") #0
+sum(vert_sj$taxon_class_name == "Elasmobranchii" & vert_sj$taxon_species_name == "") #0
+
+sum(vert_sj$taxon_class_name == "Petromyzonti" & vert_sj$taxon_species_name == "") #0
+
+
+##so lets move the classes in their own dataframe
+birds_sj <- vert_sj[(vert_sj$taxon_class_name == "Aves"),]
+amphib_sj <- vert_sj[(vert_sj$taxon_class_name == "Amphibia"),]
+reptile_sj <- vert_sj[(vert_sj$taxon_class_name == "Reptilia"),]
+mammal_sj <- vert_sj[(vert_sj$taxon_class_name == "Mammalia"),]
+actinop_sj <- vert_sj[(vert_sj$taxon_class_name == "Actinopterygii"),]
+elasmo_sj <- vert_sj[(vert_sj$taxon_class_name == "Elasmobranchii"),]
+petro_sj <- vert_sj[(vert_sj$taxon_class_name == "Petromyzonti"),]
+
+##elasmo, acitino, mammal, petro, and amphibian are good to go.
+
+#reptiles
+sum(reptile_sj$taxon_species_name == "") 
+
+#the western alligator lizard is idenitifed in one but not the other we can fix that
+reptile_sj$taxon_species_name[(reptile_sj$taxon_species_name == "") & reptile_sj$species_guess == "Western Alligator Lizards"] <- "Elgaria multicarinata"
+
+sum(reptile_sj$taxon_species_name == "") #0
+
+##birds
+
+#i see a couple instances where scientific name has the species, its just not in the taxon_species column
+sum(birds_sj$taxon_species_name == "") #162
+
+birds_sj$taxon_species_name[(birds_sj$taxon_species_name == "") & birds_sj$scientific_name == "Anser anser × cygnoides"] <- "Anser anser × cygnoides"
+
+birds_sj$taxon_species_name[(birds_sj$taxon_species_name == "") & birds_sj$scientific_name == "Spatula cyanoptera × discors"] <- "Spatula cyanoptera × discors"
+
+birds_sj$taxon_species_name[(birds_sj$taxon_species_name == "") & birds_sj$scientific_name == "Spatula clypeata × cyanoptera"] <- "Spatula clypeata × cyanoptera"
+
+birds_sj$taxon_species_name[(birds_sj$taxon_species_name == "") & birds_sj$scientific_name == "Larus glaucescens × occidentalis"] <- "Larus glaucescens × occidentalis"
+
+birds_sj$taxon_species_name[(birds_sj$taxon_species_name == "") & birds_sj$scientific_name == "Anas platyrhynchos × cairina moschata"] <- "Anas platyrhynchos × cairina moschata"
+
+#down to 129
+birds_sj$taxon_species_name[(birds_sj$taxon_species_name == "") & birds_sj$scientific_name == "Bucephala clangula × islandica"] <- "Bucephala clangula × islandica"
+                            
+birds_sj$taxon_species_name[(birds_sj$taxon_species_name == "") & birds_sj$scientific_name == "Aechmophorus occidentalis × clarkii"] <- "Aechmophorus occidentalis × clarkii"
+
+birds_sj$taxon_species_name[(birds_sj$taxon_species_name == "") & birds_sj$scientific_name == "Anser anser domesticus × cygnoides domesticus"] <- "Anser anser domesticus × cygnoides domesticus"
+
+birds_sj$taxon_species_name[(birds_sj$taxon_species_name == "") & birds_sj$scientific_name == "Larus argentatus × glaucescens"] <- "Larus argentatus × glaucescens"
+
+birds_sj$taxon_species_name[(birds_sj$taxon_species_name == "") & birds_sj$scientific_name == "Spatula clypeata × discors"] <- "Spatula clypeata × discors"
+
+#107  looks like the best we can get. a quick looks tell me some of these aren't unique genuses
+
+length(unique(birds_sj$taxon_genus_name)) #169
+sum(birds_sj$taxon_species_name == "") #59
+
+#we can do a quick test
+test <- birds_sj[!(birds_sj$taxon_species_name == ""),]
+
+length(unique(test$taxon_genus_name)) #175 
+
+length(unique(test$taxon_species_name)) #288
+
+birds_sj <- birds_sj[!(birds_sj$taxon_species_name == ""),] #going to remove the missing
+
+sum(birds_sj$taxon_species_name == "") #0
+
+##going to do this for fungi as well, since the number is abit low for missing speices
+
+sum(fungi_sj$taxon_species_name == "") 
+
+
+fungi_sj$taxon_species_name[(fungi_sj$taxon_species_name == "") & fungi_sj$scientific_name == "Puccinia coronata"] <- "Puccinia coronata"
+
+
+##check plant
+sum(plants_sj$taxon_genus_name == "") #1
+
+plants_sj$taxon_genus_name[(plants_sj$taxon_genus_name == "") & plants_sj$species_guess == "Carduinae"] <- "Unknown_15"
+
+#ALGAE
+sum(algae_sj$taxon_species_name == "") #0
+
+algae_sj$taxon_species_name[(algae_sj$taxon_species_name == "") & algae_sj$taxon_genus_name == "Mallomonas"] <- "Unknown_99"
+
+###all the dataframes
+
+#wildlife
+birds_sj #species
+amphib_sj #species
+reptile_sj #species
+mammal_sj #species
+actinop_sj#species 
+elasmo_sj #species
+petro_sj #species
+arthopod_sj #family level
+extra_sjwildlife #species
+
+#non-widlife
+algae_sj #genus level
+fungi_sj #species level
+plants_sj #genus level
+
+##ok now for ease, we're going to re-combine the the wildlife into one big dataframe for species biodiveristy. arthropod will be distinct. rotifera will be distinct
+animal_sjo <- rbind(amphib_sj, birds_sj, reptile_sj, mammal_sj, actinop_sj, elasmo_sj, petro_sj, extra_sjwildlife)
+
+###########
+########### final biodiversity dataframes for sj
+
+#wildlife
+arthopod_sj #family level
+animal_sjo #species.
+
+#non-wildlife
+algae_sj
+plants_sj #genus level
+fungi_sj #species 
+
+```
+
+# Create biodiversity dataframes
+
+```{r}
+##############################################################################################################
+######################################################################
+#################################
+###########
+########### OAKLAND
+###########
+##############################################################################################################
+######################################################################
+
+#### ARTHROPODS
+
+##species by green space and cat
+arthopod_oakland_bio <- arthopod_oakland %>%
+  group_by(Final_CLN2, taxon_family_name, GreenSpace_Name, ACRES) %>% 
+  dplyr::summarise(n = n()) # count rows per species/genus/family
+
+arthro_oak_sum <- arthopod_oakland_bio
+##put "ALL" in the Final_CLN category
+arthro_oak_sum$Final_CLN2 <- "All"
+
+arthro_oak_sum <- arthro_oak_sum %>%
+  group_by(Final_CLN2, taxon_family_name, GreenSpace_Name, ACRES) %>%
+dplyr::summarise(n = sum(n)) %>%   # Sum the Value
+  ungroup() #remove whatever grouping structure 
+  #)
+
+
+arthopod_oakland_bio_final <- arthopod_oakland_bio %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_family_name", values_from = "n") 
+
+arthro_oak_sum <- arthro_oak_sum %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_family_name", values_from = "n") 
+
+#replace NAs with 0s
+arthopod_oakland_bio_final[is.na(arthopod_oakland_bio_final)] <- 0
+arthro_oak_sum[is.na(arthro_oak_sum)] <- 0
+
+##we'll just calculate the richness by category, all together, and combine them later
+
+#### ANIMALS
+
+animal_oakland_bio <- animal_oak %>%
+  group_by(Final_CLN2, taxon_species_name, GreenSpace_Name, ACRES) %>% 
+  dplyr::summarise(n = n())
+
+animal_oak_sum <- animal_oakland_bio
+##put "ALL" in the Final_CLN category
+animal_oak_sum$Final_CLN2 <- "All"
+
+animal_oak_sum <- animal_oak_sum %>%
+  group_by(Final_CLN2, taxon_species_name, GreenSpace_Name, ACRES) %>%
+dplyr::summarise(n = sum(n)) %>%   # Sum the Value
+  ungroup()
+  #)
+
+
+
+animal_oakland_bio_final <- animal_oakland_bio %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_species_name", values_from = "n") 
+
+animal_oak_sum <- animal_oak_sum %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_species_name", values_from = "n") 
+
+#replace NAs with 0s
+animal_oakland_bio_final[is.na(animal_oakland_bio_final)] <- 0
+animal_oak_sum[is.na(animal_oak_sum)] <- 0
+
+
+#####PLANTS
+plant_oakland_bio <- plants_oakland %>%
+  group_by(Final_CLN2, taxon_genus_name, GreenSpace_Name, ACRES) %>% 
+  dplyr::summarise(n = n())
+
+plant_oak_sum <- plant_oakland_bio
+##put "ALL" in the Final_CLN category
+plant_oak_sum$Final_CLN2 <- "All"
+
+plant_oak_sum <- plant_oak_sum %>%
+  group_by(Final_CLN2, taxon_genus_name, GreenSpace_Name, ACRES) %>%
+dplyr::summarise(n = sum(n)) %>%   # Sum the Value
+  ungroup()
+  #)
+
+
+plant_oakland_bio_final <- plant_oakland_bio %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_genus_name", values_from = "n") 
+
+plant_oak_sum <- plant_oak_sum %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_genus_name", values_from = "n") 
+
+#replace NAs with 0s
+plant_oakland_bio_final[is.na(plant_oakland_bio_final)] <- 0
+plant_oak_sum[is.na(plant_oak_sum)] <- 0
+
+
+##### ALGAE 
+algae_oakland_bio <- algae_oakland %>%
+  group_by(Final_CLN2, taxon_species_name, GreenSpace_Name, ACRES) %>% 
+  dplyr::summarise(n = n())
+
+algae_oak_sum <- algae_oakland_bio
+##put "ALL" in the Final_CLN category
+algae_oak_sum$Final_CLN2 <- "All"
+
+algae_oak_sum <- algae_oak_sum %>%
+  group_by(Final_CLN2, taxon_species_name, GreenSpace_Name, ACRES) %>%
+dplyr::summarise(n = sum(n)) %>%   # Sum the Value
+  ungroup()
+  #)
+
+
+
+algae_oakland_bio_final <- algae_oakland_bio %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_species_name", values_from = "n") 
+
+algae_oak_sum <- algae_oak_sum %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_species_name", values_from = "n") 
+
+#replace NAs with 0s
+algae_oakland_bio_final[is.na(algae_oakland_bio_final)] <- 0
+algae_oak_sum[is.na(algae_oak_sum)] <- 0
+
+
+
+## FUNGI
+fungi_oakland_bio <- fungi_oakland %>%
+  group_by(Final_CLN2, taxon_species_name, GreenSpace_Name, ACRES) %>% 
+  dplyr::summarise(n = n())
+
+fungi_oak_sum <- fungi_oakland_bio
+##put "ALL" in the Final_CLN category
+fungi_oak_sum$Final_CLN2 <- "All"
+
+fungi_oak_sum <- fungi_oak_sum %>%
+  group_by(Final_CLN2, taxon_species_name, GreenSpace_Name, ACRES) %>%
+dplyr::summarise(n = sum(n)) %>%   # Sum the Value
+  ungroup()
+  #)
+
+
+fungi_oakland_bio_final <- fungi_oakland_bio %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_species_name", values_from = "n") 
+
+fungi_oak_sum <- fungi_oak_sum %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_species_name", values_from = "n") 
+
+#replace NAs with 0s
+fungi_oakland_bio_final[is.na(fungi_oakland_bio_final)] <- 0
+fungi_oak_sum[is.na(fungi_oak_sum)] <- 0
+
+##############################################################################################################
+######################################################################
+#################################
+###########
+########### SAN FRANCISCO
+###########
+##############################################################################################################
+######################################################################
+
+#### ARTHROPODS
+
+##species by green space and cat
+arthopod_sf_bio <- arthopod_sf %>%
+  group_by(Final_CLN2, taxon_family_name, GreenSpace_Name, ACRES) %>% 
+  dplyr::summarise(n = n())
+
+arthro_sf_sum <- arthopod_sf_bio
+##put "ALL" in the Final_CLN category
+arthro_sf_sum$Final_CLN2 <- "All"
+
+arthro_sf_sum <- arthro_sf_sum %>%
+  group_by(Final_CLN2, taxon_family_name, GreenSpace_Name, ACRES) %>%
+dplyr::summarise(n = sum(n)) %>%   # Sum the Value
+  ungroup()
+  #)
+
+arthopod_sf_bio_final <- arthopod_sf_bio %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_family_name", values_from = "n") 
+
+arthro_sf_sum <- arthro_sf_sum %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_family_name", values_from = "n") 
+
+#replace NAs with 0s
+arthopod_sf_bio_final[is.na(arthopod_sf_bio_final)] <- 0
+arthro_sf_sum[is.na(arthro_sf_sum)] <- 0
+
+##we'll just calculate the richness by category, all together, and combine them later
+
+#### ANIMALS
+
+animal_sf_bio <- animal_sfr %>%
+  group_by(Final_CLN2, taxon_species_name, GreenSpace_Name, ACRES) %>% 
+  dplyr::summarise(n = n())
+
+animal_sf_sum <- animal_sf_bio
+##put "ALL" in the Final_CLN category
+animal_sf_sum$Final_CLN2 <- "All"
+
+animal_sf_sum <- animal_sf_sum %>%
+  group_by(Final_CLN2, taxon_species_name, GreenSpace_Name, ACRES) %>%
+dplyr::summarise(n = sum(n)) %>%   # Sum the Value
+  ungroup()
+  #)
+
+
+animal_sf_bio_final <- animal_sf_bio %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_species_name", values_from = "n") 
+
+animal_sf_sum <- animal_sf_sum %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_species_name", values_from = "n") 
+
+#replace NAs with 0s
+animal_sf_bio_final[is.na(animal_sf_bio_final)] <- 0
+animal_sf_sum[is.na(animal_sf_sum)] <- 0
+
+
+#####PLANTS
+plant_sf_bio <- plants_sf %>%
+  group_by(Final_CLN2, taxon_genus_name, GreenSpace_Name, ACRES) %>% 
+  dplyr::summarise(n = n())
+
+plant_sf_sum <- plant_sf_bio
+##put "ALL" in the Final_CLN category
+plant_sf_sum$Final_CLN2 <- "All"
+
+plant_sf_sum <- plant_sf_sum %>%
+  group_by(Final_CLN2, taxon_genus_name, GreenSpace_Name, ACRES) %>%
+dplyr::summarise(n = sum(n)) %>%   # Sum the Value
+  ungroup()
+  #)
+
+
+plant_sf_bio_final <- plant_sf_bio %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_genus_name", values_from = "n") 
+
+plant_sf_sum <- plant_sf_sum %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_genus_name", values_from = "n") 
+
+#replace NAs with 0s
+plant_sf_bio_final[is.na(plant_sf_bio_final)] <- 0
+plant_sf_sum[is.na(plant_sf_sum)] <- 0
+
+
+##### ALGAE 
+algae_sf_bio <- algae_sf %>%
+  group_by(Final_CLN2, taxon_species_name, GreenSpace_Name, ACRES) %>% 
+  dplyr::summarise(n = n())
+
+algae_sf_sum <- algae_sf_bio
+##put "ALL" in the Final_CLN category
+algae_sf_sum$Final_CLN2 <- "All"
+
+algae_sf_sum <- algae_sf_sum %>%
+  group_by(Final_CLN2, taxon_species_name, GreenSpace_Name, ACRES) %>%
+dplyr::summarise(n = sum(n)) %>%   # Sum the Value
+  ungroup()
+  #)
+
+algae_sf_bio_final <- algae_sf_bio %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_species_name", values_from = "n") 
+
+algae_sf_sum <- algae_sf_sum %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_species_name", values_from = "n") 
+
+#replace NAs with 0s
+algae_sf_bio_final[is.na(algae_sf_bio_final)] <- 0
+algae_sf_sum[is.na(algae_sf_sum)] <- 0
+
+
+
+## FUNGI
+fungi_sf_bio <- fungi_sf %>%
+  group_by(Final_CLN2, taxon_species_name, GreenSpace_Name, ACRES) %>% 
+  dplyr::summarise(n = n())
+
+fungi_sf_sum <- fungi_sf_bio
+##put "ALL" in the Final_CLN category
+fungi_sf_sum$Final_CLN2 <- "All"
+
+fungi_sf_sum <- fungi_sf_sum %>%
+  group_by(Final_CLN2, taxon_species_name, GreenSpace_Name, ACRES) %>%
+dplyr::summarise(n = sum(n)) %>%   # Sum the Value
+  ungroup()
+  #)
+
+fungi_sf_bio_final <- fungi_sf_bio %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_species_name", values_from = "n") 
+
+fungi_sf_sum <- fungi_sf_sum %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_species_name", values_from = "n") 
+
+#replace NAs with 0s
+fungi_sf_bio_final[is.na(fungi_sf_bio_final)] <- 0
+fungi_sf_sum[is.na(fungi_sf_sum)] <- 0
+
+
+##############################################################################################################
+######################################################################
+#################################
+###########
+########### SAN JOSE
+###########
+##############################################################################################################
+######################################################################
+
+#### ARTHROPODS
+
+##species by green space and cat
+arthopod_sj_bio <- arthopod_sj %>%
+  group_by(Final_CLN2, taxon_family_name, GreenSpace_Name, ACRES) %>% 
+  dplyr::summarise(n = n())
+
+arthro_sj_sum <- arthopod_sj_bio
+##put "ALL" in the Final_CLN category
+arthro_sj_sum$Final_CLN2 <- "All"
+
+arthro_sj_sum <- arthro_sj_sum %>%
+  group_by(Final_CLN2, taxon_family_name, GreenSpace_Name, ACRES) %>%
+dplyr::summarise(n = sum(n)) %>%   # Sum the Value
+  ungroup()
+  #)
+
+
+arthopod_sj_bio_final <- arthopod_sj_bio %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_family_name", values_from = "n") 
+
+arthro_sj_sum <- arthro_sj_sum %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_family_name", values_from = "n") 
+
+#replace NAs with 0s
+arthopod_sj_bio_final[is.na(arthopod_sj_bio_final)] <- 0
+arthro_sj_sum[is.na(arthro_sj_sum)] <- 0
+
+##we'll just calculate the richness by category, all together, and combine them later
+
+#### ANIMALS
+
+animal_sj_bio <- animal_sjo %>%
+  group_by(Final_CLN2, taxon_species_name, GreenSpace_Name, ACRES) %>% 
+  dplyr::summarise(n = n())
+
+animal_sj_sum <- animal_sj_bio
+##put "ALL" in the Final_CLN category
+animal_sj_sum$Final_CLN2 <- "All"
+
+animal_sj_sum <- animal_sj_sum %>%
+  group_by(Final_CLN2, taxon_species_name, GreenSpace_Name, ACRES) %>%
+dplyr::summarise(n = sum(n)) %>%   # Sum the Value
+  ungroup()
+  #)
+
+
+animal_sj_bio_final <- animal_sj_bio %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_species_name", values_from = "n") 
+
+animal_sj_sum <- animal_sj_sum %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_species_name", values_from = "n") 
+
+#replace NAs with 0s
+animal_sj_bio_final[is.na(animal_sj_bio_final)] <- 0
+animal_sj_sum[is.na(animal_sj_sum)] <- 0
+
+
+#####PLANTS
+plant_sj_bio <- plants_sj %>%
+  group_by(Final_CLN2, taxon_genus_name, GreenSpace_Name, ACRES) %>% 
+  dplyr::summarise(n = n())
+
+plant_sj_sum <- plant_sj_bio
+
+##put "ALL" in the Final_CLN category
+plant_sj_sum$Final_CLN2 <- "All"
+
+plant_sj_sum <- plant_sj_sum %>%
+  group_by(Final_CLN2, taxon_genus_name, GreenSpace_Name, ACRES) %>%
+dplyr::summarise(n = sum(n)) %>%   # Sum the Value
+  ungroup()
+  #)
+
+plant_sj_bio_final <- plant_sj_bio %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_genus_name", values_from = "n") 
+
+plant_sj_sum <- plant_sj_sum %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_genus_name", values_from = "n") 
+
+#replace NAs with 0s
+plant_sj_bio_final[is.na(plant_sj_bio_final)] <- 0
+plant_sj_sum[is.na(plant_sj_sum)] <- 0
+
+
+##### ALGAE 
+algae_sj_bio <- algae_sj %>%
+  group_by(Final_CLN2, taxon_species_name, GreenSpace_Name, ACRES) %>% 
+  dplyr::summarise(n = n())
+
+algae_sj_sum <- algae_sj_bio
+##put "ALL" in the Final_CLN category
+algae_sj_sum$Final_CLN2 <- "All"
+
+algae_sj_sum <- algae_sj_sum %>%
+  group_by(Final_CLN2, taxon_species_name, GreenSpace_Name, ACRES) %>%
+dplyr::summarise(n = sum(n)) %>%   # Sum the Value
+  ungroup()
+  #)
+
+
+algae_sj_bio_final <- algae_sj_bio %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_species_name", values_from = "n") 
+
+algae_sj_sum <- algae_sj_sum %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_species_name", values_from = "n") 
+
+#replace NAs with 0s
+algae_sj_bio_final[is.na(algae_sj_bio_final)] <- 0
+algae_sj_sum[is.na(algae_sj_sum)] <- 0
+
+
+
+## FUNGI
+fungi_sj_bio <- fungi_sj %>%
+  group_by(Final_CLN2, taxon_species_name, GreenSpace_Name, ACRES) %>% 
+  dplyr::summarise(n = n())
+
+fungi_sj_sum <- fungi_sj_bio
+##put "ALL" in the Final_CLN category
+fungi_sj_sum$Final_CLN2 <- "All"
+
+fungi_sj_sum <- fungi_sj_sum %>%
+  group_by(Final_CLN2, taxon_species_name, GreenSpace_Name, ACRES) %>%
+dplyr::summarise(n = sum(n)) %>%   # Sum the Value
+  ungroup()
+  #)
+
+fungi_sj_bio_final <- fungi_sj_bio %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_species_name", values_from = "n") 
+
+fungi_sj_sum <- fungi_sj_sum %>%
+  group_by(Final_CLN2, GreenSpace_Name) %>%
+  pivot_wider(id_cols = c("Final_CLN2", "GreenSpace_Name", "ACRES"), names_from = "taxon_species_name", values_from = "n") 
+
+#replace NAs with 0s
+fungi_sj_bio_final[is.na(fungi_sj_bio_final)] <- 0
+fungi_sj_sum[is.na(fungi_sj_sum)] <- 0
+
+
+
+###FINAL DATAFRAMES
+
+#oakland
+arthopod_oakland_bio_final
+arthro_oak_sum
+
+animal_oakland_bio_final
+animal_oak_sum
+
+
+plant_oakland_bio_final
+plant_oak_sum
+
+algae_oakland_bio_final
+algae_oak_sum
+
+fungi_oakland_bio_final
+fungi_oak_sum
+
+
+#sf
+arthopod_sf_bio_final
+arthro_sf_sum
+
+animal_sf_bio_final
+animal_sf_sum
+
+
+plant_sf_bio_final
+plant_sf_sum
+
+algae_sf_bio_final
+algae_sf_sum
+
+fungi_sf_bio_final
+fungi_sf_sum
+
+
+##san jose
+arthopod_sj_bio_final
+arthro_sj_sum
+
+animal_sj_bio_final
+animal_sj_sum
+
+
+plant_sj_bio_final
+plant_sj_sum
+
+algae_sj_bio_final
+algae_sj_sum
+
+fungi_sj_bio_final
+fungi_sj_sum
+```
+
+##Get Observations
+
+```{r}
+
+##############################
+############### GET OBSERVATIONS
+arthopod_sj_bio_final$observations <- rowSums(arthopod_sj_bio_final[, 4:187])
+
+arthro_sj_sum$observations <- rowSums(arthro_sj_sum[, 4:187])
+
+animal_sj_bio_final$observations <- rowSums(animal_sj_bio_final[, 4:414])
+
+animal_sj_sum$observations <- rowSums(animal_sj_sum[, 4:414])
+
+plant_sj_bio_final$observations <- rowSums(plant_sj_bio_final[, 4:393])
+
+plant_sj_sum$observations <- rowSums(plant_sj_sum[, 4:393])
+
+algae_sj_bio_final$observations <- rowSums(algae_sj_bio_final[, 4:7])
+
+algae_sj_sum$observations <- rowSums(algae_sj_sum[, 4:7])
+
+fungi_sj_bio_final$observations <- rowSums(fungi_sj_bio_final[, 4:166])
+
+fungi_sj_sum$observations <- rowSums(fungi_sj_sum[, 4:166])
+
+
+
+arthopod_oakland_bio_final$observations <- rowSums(arthopod_oakland_bio_final[, 4:207])
+
+arthro_oak_sum$observations <- rowSums(arthro_oak_sum[, 4:207])
+
+animal_oakland_bio_final$observations <- rowSums(animal_oakland_bio_final[, 4:426])
+
+animal_oak_sum$observations <- rowSums(animal_oak_sum[, 4:426])
+
+plant_oakland_bio_final$observations <- rowSums(plant_oakland_bio_final[, 4:404])
+
+plant_oak_sum$observations <- rowSums(plant_oak_sum[, 4:404])
+
+algae_oakland_bio_final$observations <- rowSums(algae_oakland_bio_final[, 4:16])
+
+algae_oak_sum$observations <- rowSums(algae_oak_sum[, 4:16])
+
+fungi_oakland_bio_final$observations <- rowSums(fungi_oakland_bio_final[, 4:438])
+
+fungi_oak_sum$observations <- rowSums(fungi_oak_sum[, 4:438])
+
+
+
+
+##############################
+############### GET OBSERVATIONS
+arthopod_sf_bio_final$observations <- rowSums(arthopod_sf_bio_final[, 4:254])
+
+arthro_sf_sum$observations <- rowSums(arthro_sf_sum[, 4:254])
+
+animal_sf_bio_final$observations <- rowSums(animal_sf_bio_final[, 4:625])
+
+animal_sf_sum$observations <- rowSums(animal_sf_sum[, 4:625])
+
+plant_sf_bio_final$observations <- rowSums(plant_sf_bio_final[, 4:553])
+
+plant_sf_sum$observations <- rowSums(plant_sf_sum[, 4:553])
+
+algae_sf_bio_final$observations <- rowSums(algae_sf_bio_final[, 4:32])
+
+algae_sf_sum$observations <- rowSums(algae_sf_sum[, 4:32])
+
+fungi_sf_bio_final$observations <- rowSums(fungi_sf_bio_final[, 4:418])
+
+fungi_sf_sum$observations <- rowSums(fungi_sf_sum[, 4:418])
+
+```
+
+
+
+#Calculate species richness
+
+```{r}
+##############################
+########## OAKLAND
+##########
+##################################################
+
+#Calculate richness for each row (total number of species with at least one species observed)
+
+arthopod_oakland_bio_final$Richness <- apply(X = arthopod_oakland_bio_final[, c(4:207)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+arthro_oak_sum$Richness <- apply(X = arthro_oak_sum[, c(4:207)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+
+animal_oakland_bio_final$Richness <- apply(X = animal_oakland_bio_final[, c(4:426)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+animal_oak_sum$Richness <- apply(X = animal_oak_sum[, c(4:426)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+
+plant_oakland_bio_final$Richness <- apply(X = plant_oakland_bio_final[, c(4:404)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+plant_oak_sum$Richness <- apply(X = plant_oak_sum[, c(4:404)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+
+algae_oakland_bio_final$Richness <- apply(X = algae_oakland_bio_final[, c(4:16)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+algae_oak_sum$Richness <- apply(X = algae_oak_sum[, c(4:16)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+
+fungi_oakland_bio_final$Richness <- apply(X = fungi_oakland_bio_final[, c(4:438)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+fungi_oak_sum$Richness <- apply(X = fungi_oak_sum[, c(4:438)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+
+##now lets filter them from the first and last one
+oakland_animal_richness_CLN <- animal_oakland_bio_final[, c(1:3, 427,428)]
+oakland_animal_richness_all <- animal_oak_sum[, c(1:3, 427,428)]
+
+oakland_arthropod_richness_CLN <- arthopod_oakland_bio_final[, c(1:3, 208, 209)]
+oakland_arthropod_richness_all <- arthro_oak_sum[, c(1:3, 208, 209)]
+
+
+oakland_plant_richness_CLN <- plant_oakland_bio_final[, c(1:3, 405, 406)]
+oakland_plant_richness_all <- plant_oak_sum[, c(1:3, 405, 406)]
+
+oakland_algae_richness_CLN <- algae_oakland_bio_final[, c(1:3, 17,18)]
+oakland_algae_richness_all <- algae_oak_sum[, c(1:3, 17,18)]
+
+
+oakland_fungi_richness_CLN <- fungi_oakland_bio_final[, c(1:3, 439,440)]
+oakland_fungi_richness_all <- fungi_oak_sum[, c(1:3, 439,440)]
+
+##COMBINE ALL ANIMALS 
+oakland_total_animal_richness_CLN <- rbind(oakland_animal_richness_CLN, oakland_arthropod_richness_CLN)
+oakland_total_animal_richness_all <- rbind(oakland_animal_richness_all, oakland_arthropod_richness_all)
+
+
+oakland_total_plant_richness_CLN <- rbind(oakland_plant_richness_CLN, oakland_algae_richness_CLN)
+oakland_total_plant_richness_all <- rbind(oakland_plant_richness_all, oakland_algae_richness_all)
+
+oakland_fungi_richness_CLN
+oakland_fungi_richness_all
+
+##############################
+########## SF
+##########
+##################################################
+
+#Calculate richness for each row (total number of species with at least one species observed)
+
+arthopod_sf_bio_final$Richness <- apply(X = arthopod_sf_bio_final[, c(4:254)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+arthro_sf_sum$Richness <- apply(X = arthro_sf_sum[, c(4:254)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+
+animal_sf_bio_final$Richness <- apply(X = animal_sf_bio_final[, c(4:625)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+animal_sf_sum$Richness <- apply(X = animal_sf_sum[, c(4:625)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+
+plant_sf_bio_final$Richness <- apply(X = plant_sf_bio_final[, c(4:553)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+plant_sf_sum$Richness <- apply(X = plant_sf_sum[, c(4:553)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+
+algae_sf_bio_final$Richness <- apply(X = algae_sf_bio_final[, c(4:32)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+algae_sf_sum$Richness <- apply(X = algae_sf_sum[, c(4:32)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+
+fungi_sf_bio_final$Richness <- apply(X = fungi_sf_bio_final[, c(4:418)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+fungi_sf_sum$Richness <- apply(X = fungi_sf_sum[, c(4:418)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+##now lets filter them from the first and last one
+sf_animal_richness_CLN <- animal_sf_bio_final[, c(1:3, 626,627)]
+sf_animal_richness_all <- animal_sf_sum[, c(1:3, 626,627)]
+
+sf_arthropod_richness_CLN <- arthopod_sf_bio_final[, c(1:3, 255, 256)]
+sf_arthropod_richness_all <- arthro_sf_sum[, c(1:3, 255,256)]
+
+
+sf_plant_richness_CLN <- plant_sf_bio_final[, c(1:3, 554,555)]
+sf_plant_richness_all <- plant_sf_sum[, c(1:3, 554,555)]
+
+sf_algae_richness_CLN <- algae_sf_bio_final[, c(1:3, 33,34)]
+sf_algae_richness_all <- algae_sf_sum[, c(1:3, 33,34)]
+
+
+sf_fungi_richness_CLN <- fungi_sf_bio_final[, c(1:3, 419,420)]
+sf_fungi_richness_all <- fungi_sf_sum[, c(1:3, 419,420)]
+
+##COMBINE ALL ANIMALS 
+sf_total_animal_richness_CLN <- rbind(sf_animal_richness_CLN, sf_arthropod_richness_CLN)
+sf_total_animal_richness_all <- rbind(sf_animal_richness_all, sf_arthropod_richness_all)
+
+
+sf_total_plant_richness_CLN <- rbind(sf_plant_richness_CLN, sf_algae_richness_CLN)
+sf_total_plant_richness_all <- rbind(sf_plant_richness_all, sf_algae_richness_all)
+
+sf_fungi_richness_CLN
+sf_fungi_richness_all
+
+##############################
+########## SAN JOSE
+##########
+##################################################
+
+#Calculate richness for each row (total number of species with at least one species observed)
+
+arthopod_sj_bio_final$Richness <- apply(X = arthopod_sj_bio_final[, c(4:187)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+arthro_sj_sum$Richness <- apply(X = arthro_sj_sum[, c(4:187)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+
+animal_sj_bio_final$Richness <- apply(X = animal_sj_bio_final[, c(4:414)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+animal_sj_sum$Richness <- apply(X = animal_sj_sum[, c(4:414)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+
+plant_sj_bio_final$Richness <- apply(X = plant_sj_bio_final[, c(4:393)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+plant_sj_sum$Richness <- apply(X = plant_sj_sum[, c(4:393)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+
+algae_sj_bio_final$Richness <- apply(X = algae_sj_bio_final[, c(4:7)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+algae_sj_sum$Richness <- apply(X = algae_sj_sum[, c(4:7)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+
+fungi_sj_bio_final$Richness <- apply(X = fungi_sj_bio_final[, c(4:166)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+fungi_sj_sum$Richness <- apply(X = fungi_sj_sum[, c(4:166)], #check rows for columns
+                          MARGIN = 1,
+                          FUN = function(x) {
+                            sum(x > 0)
+                          })
+
+
+##now lets filter them from the first and last one
+sj_animal_richness_CLN <- animal_sj_bio_final[, c(1:3, 415,416)]
+sj_animal_richness_all <- animal_sj_sum[, c(1:3, 415,416)]
+
+sj_arthropod_richness_CLN <- arthopod_sj_bio_final[, c(1:3, 188,189)]
+sj_arthropod_richness_all <- arthro_sj_sum[, c(1:3, 188,189)]
+
+
+sj_plant_richness_CLN <- plant_sj_bio_final[, c(1:3, 394,395)]
+sj_plant_richness_all <- plant_sj_sum[, c(1:3, 394,395)]
+
+sj_algae_richness_CLN <- algae_sj_bio_final[, c(1:3, 8,9)]
+sj_algae_richness_all <- algae_sj_sum[, c(1:3, 8,9)]
+
+
+sj_fungi_richness_CLN <- fungi_sj_bio_final[,c(1:3, 167,168)]
+sj_fungi_richness_all <- fungi_sj_sum[, c(1:3, 167,168)]
+
+##COMBINE ALL ANIMALS 
+sj_total_animal_richness_CLN <- rbind(sj_animal_richness_CLN, sj_arthropod_richness_CLN)
+sj_total_animal_richness_all <- rbind(sj_animal_richness_all, sj_arthropod_richness_all)
+
+
+sj_total_plant_richness_CLN <- rbind(sj_plant_richness_CLN, sj_algae_richness_CLN)
+sj_total_plant_richness_all <- rbind(sj_plant_richness_all, sj_algae_richness_all)
+
+sj_fungi_richness_CLN
+sj_fungi_richness_all
+
+
+```
+
+
+#Combine DFs
+
+```{r}
+########################################
+####################
+#####COMBINE SITES FOR DATAFRAMES THAT WERE CONSILIDATES 
+####################
+########################################
+
+
+######################################## OAKLAND
+
+oakland_total_animal_richness_CLN2 <- oakland_total_animal_richness_CLN %>%
+  group_by(Final_CLN2, GreenSpace_Name, ACRES) %>%
+ dplyr::summarise(
+    total_Richness = sum(Richness),
+    total_obs = sum(observations)# Sum the Value
+  )
+
+oakland_total_animal_richness_all2 <- oakland_total_animal_richness_all %>%
+  group_by(Final_CLN2, GreenSpace_Name, ACRES) %>%
+ dplyr::summarise(
+    total_Richness = sum(Richness),
+    total_obs = sum(observations)# Sum the Value
+  )
+
+
+oakland_total_plant_richness_CLN2 <- oakland_total_plant_richness_CLN %>%
+  group_by(Final_CLN2, GreenSpace_Name, ACRES) %>%
+ dplyr::summarise(
+    total_Richness = sum(Richness),
+    total_obs = sum(observations)# Sum the Value    # Sum the Value
+  )
+
+oakland_total_plant_richness_all2 <- oakland_total_plant_richness_all %>%
+  group_by(Final_CLN2, GreenSpace_Name, ACRES) %>%
+ dplyr::summarise(
+    total_Richness = sum(Richness),
+    total_obs = sum(observations)# Sum the Value    # Sum the Value
+  )
+
+######################################## SAN FRANCISCO
+
+sf_total_animal_richness_CLN2 <- sf_total_animal_richness_CLN %>%
+  group_by(Final_CLN2, GreenSpace_Name, ACRES) %>%
+ dplyr::summarise(
+    total_Richness = sum(Richness),
+    total_obs = sum(observations)# Sum the Value    # Sum the Value
+  )
+
+sf_total_animal_richness_all2 <- sf_total_animal_richness_all %>%
+  group_by(Final_CLN2, GreenSpace_Name, ACRES) %>%
+ dplyr::summarise(
+    total_Richness = sum(Richness),
+    total_obs = sum(observations)# Sum the Value    # Sum the Value
+  )
+
+
+sf_total_plant_richness_CLN2 <- sf_total_plant_richness_CLN %>%
+  group_by(Final_CLN2, GreenSpace_Name, ACRES) %>%
+ dplyr::summarise(
+    total_Richness = sum(Richness),
+    total_obs = sum(observations)# Sum the Value    # Sum the Value
+  )
+
+sf_total_plant_richness_all2 <- sf_total_plant_richness_all %>%
+  group_by(Final_CLN2, GreenSpace_Name, ACRES) %>%
+ dplyr::summarise(
+    total_Richness = sum(Richness),
+    total_obs = sum(observations)# Sum the Value    # Sum the Value
+  )
+
+######################################## SAN JOSE
+
+sj_total_animal_richness_CLN2 <- sj_total_animal_richness_CLN %>%
+  group_by(Final_CLN2, GreenSpace_Name, ACRES) %>%
+ dplyr::summarise(
+    total_Richness = sum(Richness),
+    total_obs = sum(observations)# Sum the Value    # Sum the Value
+  )
+
+sj_total_animal_richness_all2 <- sj_total_animal_richness_all %>%
+  group_by(Final_CLN2, GreenSpace_Name, ACRES) %>%
+ dplyr::summarise(
+    total_Richness = sum(Richness),
+    total_obs = sum(observations)# Sum the Value    # Sum the Value
+  )
+
+
+sj_total_plant_richness_CLN2 <- sj_total_plant_richness_CLN %>%
+  group_by(Final_CLN2, GreenSpace_Name, ACRES) %>%
+ dplyr::summarise(
+    total_Richness = sum(Richness),
+    total_obs = sum(observations)# Sum the Value    # Sum the Value
+  )
+
+sj_total_plant_richness_all2 <- sj_total_plant_richness_all %>%
+  group_by(Final_CLN2, GreenSpace_Name, ACRES) %>%
+ dplyr::summarise(
+    total_Richness = sum(Richness),
+    total_obs = sum(observations)# Sum the Value    # Sum the Value
+  )
+```
+
+# Final Dataframes
+
+```{r}
+###FINAL DATAFRAMES
+
+#oakland
+oakland_total_animal_richness_CLN2$City <- "Oakland"
+oakland_total_animal_richness_all2$City <- "Oakland"
+oakland_total_plant_richness_CLN2$City <- "Oakland"
+oakland_total_plant_richness_all2$City <- "Oakland"
+oakland_fungi_richness_CLN$City <- "Oakland"
+oakland_fungi_richness_all$City <- "Oakland"
+
+#sf
+sf_total_animal_richness_CLN2$City <- "San Francisco"
+sf_total_animal_richness_all2$City <- "San Francisco"
+sf_total_plant_richness_CLN2$City <- "San Francisco"
+sf_total_plant_richness_all2$City <- "San Francisco"
+sf_fungi_richness_CLN$City <- "San Francisco"
+sf_fungi_richness_all$City <- "San Francisco"
+
+#sj
+sj_total_animal_richness_CLN2$City <- "San Jose"
+sj_total_animal_richness_all2$City <- "San Jose"
+sj_total_plant_richness_CLN2$City <- "San Jose"
+sj_total_plant_richness_all2$City <- "San Jose"
+sj_fungi_richness_CLN$City <- "San Jose"
+sj_fungi_richness_all$City <- "San Jose"
+
+####NOW I want to combine everything to help with visualizations to visualize it
+
+##first, we need to add a city column
+all_animal_CLN <- rbind(oakland_total_animal_richness_CLN2, sf_total_animal_richness_CLN2, sj_total_animal_richness_CLN2)
+all_animal_all <- rbind(oakland_total_animal_richness_all2, sf_total_animal_richness_all2, sj_total_animal_richness_all2)
+
+
+all_plant_CLN <- rbind(oakland_total_plant_richness_CLN2, sf_total_plant_richness_CLN2, sj_total_plant_richness_CLN2)
+all_plant_all <- rbind(oakland_total_plant_richness_all2, sf_total_plant_richness_all2, sj_total_plant_richness_all2)
+
+all_fungi_CLN <- rbind(oakland_fungi_richness_CLN, sf_fungi_richness_CLN, sj_fungi_richness_CLN)
+all_fungi_all <- rbind(oakland_fungi_richness_all, sf_fungi_richness_all, sj_fungi_richness_all)
+
+names(all_fungi_CLN)[4] <- "total_obs"
+names(all_fungi_all)[4] <- "total_obs"
+names(all_fungi_CLN)[5] <- "total_Richness"
+names(all_fungi_all)[5] <- "total_Richness"
+
+########for the ALL dataframes, there are multiple entries because it combines DNC AND C. LETS COMBINE THEM
+####CHECK IN WITH CHRISTINE (CEW) ABOUT WHAT TO DO FOR ACRES. IN SOME CASES, THE ACREAGE IS DIFFERENT, I'M GOING TO TAKE THE MAX
+
+
+all_fungi_all <- all_fungi_all %>%
+  group_by(Final_CLN2, GreenSpace_Name, City) %>%
+  dplyr::summarise(
+    ACRES = max(ACRES, na.rm = TRUE),
+    total_Richness = sum(total_Richness, na.rm = TRUE),
+    total_obs = sum(total_obs, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+all_fungi_CLN <- all_fungi_CLN %>%
+  group_by(Final_CLN2, GreenSpace_Name, City) %>%
+  dplyr::summarise(
+    ACRES = max(ACRES, na.rm = TRUE),  # Assuming ACRES is the same for the same group
+    total_Richness = sum(total_Richness, na.rm = TRUE),
+    total_obs = sum(total_obs, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+all_animal_all <- all_animal_all %>%
+ group_by(Final_CLN2, GreenSpace_Name, City) %>%
+  dplyr::summarise(
+    ACRES = max(ACRES, na.rm = TRUE),  # Assuming ACRES is the same for the same group
+    total_Richness = sum(total_Richness, na.rm = TRUE),
+    total_obs = sum(total_obs, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+all_animal_CLN <- all_animal_CLN %>%
+  group_by(Final_CLN2, GreenSpace_Name, City) %>%
+  dplyr::summarise(
+    ACRES = max(ACRES, na.rm = TRUE),  # Assuming ACRES is the same for the same group
+    total_Richness = sum(total_Richness, na.rm = TRUE),
+    total_obs = sum(total_obs, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+
+all_plant_all <- all_plant_all %>%
+  group_by(Final_CLN2, GreenSpace_Name, City) %>%
+  dplyr::summarise(
+    ACRES = max(ACRES, na.rm = TRUE),  # Assuming ACRES is the same for the same group
+    total_Richness = sum(total_Richness, na.rm = TRUE),
+    total_obs = sum(total_obs, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+all_plant_CLN <- all_plant_CLN %>%
+  group_by(Final_CLN2, GreenSpace_Name, City) %>%
+  dplyr::summarise(
+    ACRES = max(ACRES, na.rm = TRUE),  # Assuming ACRES is the same for the same group
+    total_Richness = sum(total_Richness, na.rm = TRUE),
+    total_obs = sum(total_obs, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+##need to get a dataframe that adds ALL of the richness together 
+all_biodiversity_CLN <- rbind(all_animal_CLN, all_plant_CLN, all_fungi_CLN)
+all_biodiversity_all <- rbind(all_animal_all, all_plant_all, all_fungi_all)
+
+
+####COMBINE SO WE CAN PLOT ALL NEXT TO CLN
+combined_biodiversity <- rbind(all_biodiversity_CLN, all_biodiversity_all)
+combined_animal_biodiversity <- rbind(all_animal_CLN, all_animal_all)
+combined_plant_biodiversity <- rbind(all_plant_CLN, all_plant_all)
+combined_fungi_biodiversity <- rbind(all_fungi_CLN, all_fungi_all)
+
+
+###do the grouping again
+combined_biodiversity <- combined_biodiversity %>%
+  group_by(Final_CLN2, GreenSpace_Name, ACRES, City) %>%
+  dplyr::summarise(
+    total_Richness = sum(total_Richness, na.rm = TRUE),
+    total_obs = sum(total_obs, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+combined_animal_biodiversity <- combined_animal_biodiversity %>%
+  group_by(Final_CLN2, GreenSpace_Name, ACRES, City) %>%
+  dplyr::summarise(
+    total_Richness = sum(total_Richness, na.rm = TRUE),
+    total_obs = sum(total_obs, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+combined_plant_biodiversity <- combined_plant_biodiversity %>%
+  group_by(Final_CLN2, GreenSpace_Name, ACRES, City) %>%
+  dplyr::summarise(
+    total_Richness = sum(total_Richness, na.rm = TRUE),
+    total_obs = sum(total_obs, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+combined_fungi_biodiversity <- combined_fungi_biodiversity %>%
+  group_by(Final_CLN2, GreenSpace_Name, ACRES, City) %>%
+  dplyr::summarise(
+    total_Richness = sum(total_Richness, na.rm = TRUE),
+    total_obs = sum(total_obs, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+
+##we only want to compare ALL to C, so lets remove the DNC
+combined_biodiversity_final <- combined_biodiversity[!(combined_biodiversity$Final_CLN2 == "DNC"),]
+
+combined_animal_biodiversity_final <- combined_animal_biodiversity[!(combined_animal_biodiversity$Final_CLN2 == "DNC"),]
+
+combined_plant_biodiversity_final <- combined_plant_biodiversity[!(combined_plant_biodiversity$Final_CLN2 == "DNC"),]
+
+combined_fungi_biodiversity_final <- combined_fungi_biodiversity[!(combined_fungi_biodiversity$Final_CLN2 == "DNC"),]
+
+
+```
+
+#Summary stats
+
+```{r}
+
+####OVERALL BIODIVERSITY
+aggregate(total_Richness ~ Final_CLN2 * City, combined_biodiversity_final, mean) #on average, C has more than ALL
+#aggregate(total_Richness ~ Final_CLN2 * City, combined_biodiversity_final, sd)
+aggregate(total_Richness ~ Final_CLN2 * City, combined_biodiversity_final, sum) #if we sum, ALL has more than C
+
+##we need to control for observations
+
+###ANIMAL
+aggregate(total_Richness ~ Final_CLN2 * City, combined_animal_biodiversity_final, mean)
+aggregate(total_Richness ~ Final_CLN2 * City, combined_animal_biodiversity_final, sd)
+aggregate(total_Richness ~ Final_CLN2 * City, combined_animal_biodiversity_final, sum)
+
+###PLANT
+aggregate(total_Richness ~ Final_CLN2 * City, combined_plant_biodiversity_final, mean)
+aggregate(total_Richness ~ Final_CLN2 * City, combined_plant_biodiversity_final, sd)
+aggregate(total_Richness ~ Final_CLN2 * City, combined_plant_biodiversity_final, sum)
+
+##FUNGI
+aggregate(total_Richness ~ Final_CLN2 * City, combined_fungi_biodiversity_final, mean)
+aggregate(total_Richness ~ Final_CLN2 * City, combined_fungi_biodiversity_final, sd)
+aggregate(total_Richness ~ Final_CLN2 * City, combined_fungi_biodiversity_final, sum)
+
+
+```
+
+
+##VISUALIZE
+
+
+```{r}
+
+### ALL BIODIVERSITY
+summary_data <- combined_biodiversity_final %>%
+  group_by(Final_CLN2, City) %>%
+  dplyr::summarise(
+    sum_Richness = sum(total_Richness),
+    se = sd(total_Richness) / sqrt(n())
+  )
+
+ggplot(summary_data, aes(x = Final_CLN2, y = sum_Richness, fill = Final_CLN2)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  geom_errorbar(aes(ymin = sum_Richness - se, ymax = sum_Richness + se),
+                width = 0.2, position = position_dodge(0.9)) +
+  scale_fill_manual(
+    values = c("#668C40", "#51A3A4", "#DDCE2C"),
+    guide = "none"  # Hide legend
+  ) +
+  facet_wrap(~City) +
+  labs(x = "CLN Categorization",
+       y = "Sum of Reported Richness") +
+  theme_classic()
+
+
+## WILDLIFE
+summary_data2 <- combined_animal_biodiversity_final %>%
+  group_by(Final_CLN2, City) %>%
+  dplyr::summarise(
+    sum_Richness = sum(total_Richness),
+    se = sd(total_Richness) / sqrt(n())
+  )
+
+ggplot(summary_data2, aes(x = Final_CLN2, y = sum_Richness, fill = Final_CLN2)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  geom_errorbar(aes(ymin = sum_Richness - se, ymax = sum_Richness + se),
+                width = 0.2, position = position_dodge(0.9)) +
+  scale_fill_manual(
+    values = c("#668C40", "#51A3A4", "#DDCE2C"),
+    guide = "none"  # Hide legend
+  ) +
+  facet_wrap(~City) +
+  labs(x = "CLN Categorization",
+       y = "Sum of Reported Wildlife Richness") +
+  theme_classic()
+
+
+#PLANTS
+summary_data3 <- combined_plant_biodiversity_final %>%
+  group_by(Final_CLN2, City) %>%
+  dplyr::summarise(
+    sum_Richness = sum(total_Richness),
+    se = sd(total_Richness) / sqrt(n())
+  )
+
+ggplot(summary_data3, aes(x = Final_CLN2, y = sum_Richness, fill = Final_CLN2)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  geom_errorbar(aes(ymin = sum_Richness - se, ymax = sum_Richness + se),
+                width = 0.2, position = position_dodge(0.9)) +
+  scale_fill_manual(
+    values = c("#668C40", "#51A3A4", "#DDCE2C"),
+    guide = "none"  # Hide legend
+  ) +
+  facet_wrap(~City) +
+  labs(x = "CLN Categorization",
+       y = "Sum of Reported Plant Richness") +
+  theme_classic()
+
+# FUNGI
+summary_data4 <- combined_fungi_biodiversity_final %>%
+  group_by(Final_CLN2, City) %>%
+  dplyr::summarise(
+    sum_Richness = sum(total_Richness),
+    se = sd(total_Richness) / sqrt(n())
+  )
+
+ggplot(summary_data4, aes(x = Final_CLN2, y = sum_Richness, fill = Final_CLN2)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  geom_errorbar(aes(ymin = sum_Richness - se, ymax = sum_Richness + se),
+                width = 0.2, position = position_dodge(0.9)) +
+  scale_fill_manual(
+    values = c("#668C40", "#51A3A4", "#DDCE2C"),
+    guide = "none"  # Hide legend
+  ) +
+  facet_wrap(~City) +
+  labs(x = "CLN Categorization",
+       y = "Sum of Reported Fungi Richness") +
+  theme_classic()
+
+```
+
+#Prep to Predict
+
+```{r}
+# Fit a poisson regression, but first we need to scale our covariates. 
+# select our columns that are not associated to offsets
+#  dm = design matrix (statistical term for covariate matrix).
+
+dm <- combined_biodiversity_final[,
+        c("Final_CLN2", "City")]
+
+dm_plant  <- combined_plant_biodiversity_final[,
+        c("Final_CLN2", "City")]
+ 
+dm_animal <- combined_animal_biodiversity_final[,
+        c("Final_CLN2", "City")]
+
+dm_fungi <- combined_fungi_biodiversity_final[,
+        c("Final_CLN2", "City")]
+
+
+# next we need to make our columns that are categories into factors.
+#  This is essentially any column that is a character.
+
+dm <- dm %>% 
+  dplyr::mutate_if(
+    is.character,
+   as.factor
+  )
+
+dm_plant <- dm_plant %>% 
+  dplyr::mutate_if(
+    is.character,
+   as.factor
+  )
+
+
+dm_animal <- dm_animal %>% 
+  dplyr::mutate_if(
+    is.character,
+   as.factor
+  )
+
+
+dm_fungi <- dm_fungi %>% 
+  dplyr::mutate_if(
+    is.character,
+   as.factor
+  )
+
+
+#Next, we scale our covariates so they have a mean of 0 and a standard deviation of 1. Doing so let's use compare regression coefficients to one another so that larger ones = larger effect!
+
+dm <- dm %>% 
+  dplyr::mutate_if(
+    is.numeric,
+    function(x) as.numeric(scale(x))
+  )
+
+
+dm_animal <- dm_animal %>% 
+  dplyr::mutate_if(
+    is.numeric,
+    function(x) as.numeric(scale(x))
+  )
+
+
+dm_plant <- dm_plant %>% 
+  dplyr::mutate_if(
+    is.numeric,
+    function(x) as.numeric(scale(x))
+  )
+
+
+dm_fungi <- dm_fungi %>% 
+  dplyr::mutate_if(
+    is.numeric,
+    function(x) as.numeric(scale(x))
+  )
+
+
+# We now have the design matrix set up correctly. Next we need to get our offsets. Looking at the data, it seems like we have two offsets: "Area_KM_squared" and "observations." Because offset terms are literally just a covariate where we assume the regression coefficient is 1, we can just sum those two together. However, because they are log offsets we have to  do it in one of two ways. If our log offsets were o1 and o2 it would be:
+
+# Example 1: my_offset <- log(o1 * o2)
+# Example 2: my_offset <- log(o1) + log(o2)
+
+# These are equivalent (mathematically), summing logged values  is the example same thing as taking their product and logging that.
+
+# One thing to note though is that the scale between these two covariates is quite different! Like two orders of magnitude.
+
+
+range(combined_biodiversity_final$ACRES)
+range(combined_biodiversity_final$total_obs) 
+
+# What I would do here is scale the observations so it sits within a similar range as the km stuff. Basically, make it so a one value increase in observations = 100 observations.
+
+###since we have double the sizes for our max now, and also magnitudes more, I'm going to make the offset 200 instead
+
+##we need to do one for each city, and each dataframe
+allbiodiversity_oakland <- combined_biodiversity_final[combined_biodiversity_final$City == "Oakland",]
+allbiodiversity_sf <- combined_biodiversity_final[combined_biodiversity_final$City == "San Francisco",]
+allbiodiversity_sj <- combined_biodiversity_final[combined_biodiversity_final$City == "San Jose",]
+
+all_animal_biodiversity_oakland <- combined_animal_biodiversity_final[combined_animal_biodiversity_final$City == "Oakland",]
+all_animal_biodiversity_sf <- combined_animal_biodiversity_final[combined_animal_biodiversity_final$City == "San Francisco",]
+all_animal_biodiversity_sj <- combined_animal_biodiversity_final[combined_animal_biodiversity_final$City == "San Jose",]
+
+all_plant_biodiversity_oakland <- combined_plant_biodiversity_final[combined_plant_biodiversity_final$City == "Oakland",]
+all_plant_biodiversity_sf <- combined_plant_biodiversity_final[combined_plant_biodiversity_final$City == "San Francisco",]
+all_plant_biodiversity_sj <- combined_plant_biodiversity_final[combined_plant_biodiversity_final$City == "San Jose",]
+
+all_fungi_biodiversity_oakland <- combined_fungi_biodiversity_final[combined_fungi_biodiversity_final$City == "Oakland",]
+all_fungi_biodiversity_sf <- combined_fungi_biodiversity_final[combined_fungi_biodiversity_final$City == "San Francisco",]
+all_fungi_biodiversity_sj <- combined_fungi_biodiversity_final[combined_fungi_biodiversity_final$City == "San Jose",]
+
+###MAKE OFFSET
+
+#my_offset <- with(
+#  combined_biodiversity,{
+#    log(
+#      ACRES 
+#    ) + 
+#    log(
+#      total_obs / 100
+#    )
+##  }
+#)
+
+
+
+allbiodiversity_oakland_offset <- with(
+  allbiodiversity_oakland,{
+    log(
+      ACRES 
+    ) + 
+    log(
+      total_obs / 200
+    )
+  }
+)
+
+allbiodiversity_sf_offset <- with(
+  allbiodiversity_sf,{
+    log(
+      ACRES 
+    ) + 
+    log(
+      total_obs / 200
+    )
+  }
+)
+
+allbiodiversity_sj_offset <- with(
+  allbiodiversity_sj,{
+    log(
+      ACRES 
+    ) + 
+    log(
+      total_obs / 200
+    )
+  }
+)
+
+
+####ANIMAL BIODIVERSITY
+all_animal_biodiversity_oakland_offset <- with(
+  all_animal_biodiversity_oakland,{
+    log(
+      ACRES 
+    ) + 
+    log(
+      total_obs / 200
+    )
+  }
+)
+
+all_animal_biodiversity_sf_offset <- with(
+  all_animal_biodiversity_sf,{
+    log(
+      ACRES 
+    ) + 
+    log(
+      total_obs / 200
+    )
+  }
+)
+
+all_animal_biodiversity_sj_offset <- with(
+  all_animal_biodiversity_sj,{
+    log(
+      ACRES 
+    ) + 
+    log(
+      total_obs / 200
+    )
+  }
+)
+
+####PLANT BIODIVERSITY
+all_plant_biodiversity_oakland_offset <- with(
+  all_plant_biodiversity_oakland,{
+    log(
+      ACRES 
+    ) + 
+    log(
+      total_obs / 200
+    )
+  }
+)
+
+all_plant_biodiversity_sf_offset <- with(
+  all_plant_biodiversity_sf,{
+    log(
+      ACRES 
+    ) + 
+    log(
+      total_obs / 200
+    )
+  }
+)
+
+all_plant_biodiversity_sj_offset <- with(
+  all_plant_biodiversity_sj,{
+    log(
+      ACRES 
+    ) + 
+    log(
+      total_obs / 200
+    )
+  }
+)
+
+
+####FUNGI BIODIVERSITY
+all_fungi_biodiversity_oakland_offset <- with(
+  all_fungi_biodiversity_oakland,{
+    log(
+      ACRES 
+    ) + 
+    log(
+      total_obs / 200
+    )
+  }
+)
+
+all_fungi_biodiversity_sf_offset <- with(
+  all_fungi_biodiversity_sf,{
+    log(
+      ACRES 
+    ) + 
+    log(
+      total_obs / 200
+    )
+  }
+)
+
+all_fungi_biodiversity_sj_offset <- with(
+  all_fungi_biodiversity_sj,{
+    log(
+      ACRES 
+    ) + 
+    log(
+      total_obs / 200
+    )
+  }
+)
+
+#####CREATE A DM FOR EACH CITY PER GROUP
+
+dm$Final_CLN2 <- factor(dm$Final_CLN2)
+dm$Final_CLN2 <- relevel(dm$Final_CLN2, ref = "C")
+
+dm_animal$Final_CLN2 <- factor(dm_animal$Final_CLN2)
+dm_animal$Final_CLN2 <- relevel(dm_animal$Final_CLN2, ref = "C")
+
+dm_plant$Final_CLN2 <- factor(dm_plant$Final_CLN2)
+dm_plant$Final_CLN2 <- relevel(dm_plant$Final_CLN2, ref = "C")
+
+dm_fungi$Final_CLN2 <- factor(dm_fungi$Final_CLN2)
+dm_fungi$Final_CLN2 <- relevel(dm_fungi$Final_CLN2, ref = "C")
+
+
+dm_oak <- dm[dm$City == "Oakland",]
+dm_sf <- dm[dm$City == "San Francisco",]
+dm_sj <- dm[dm$City == "San Jose",] 
+
+dm_animal_oak <- dm_animal[dm_animal$City == "Oakland",]
+dm_animal_sf <- dm_animal[dm_animal$City == "San Francisco",]
+dm_animal_sj <- dm_animal[dm_animal$City == "San Jose",]
+
+dm_plant_oak <- dm_plant[dm_plant$City == "Oakland",]
+dm_plant_sf <- dm_plant[dm_plant$City == "San Francisco",]
+dm_plant_sj <- dm_plant[dm_plant$City == "San Jose",]
+
+dm_fungi_oak <- dm_fungi[dm_fungi$City == "Oakland",]
+dm_fungi_sf <- dm_fungi[dm_fungi$City == "San Francisco",]
+dm_fungi_sj <- dm_fungi[dm_fungi$City == "San Jose",]
+
+```
+
+#Predict OVERALL Richnes
+
+```{r}
+
+#######################################################
+############################################
+#
+#                 ALL RICHNESS
+#
+#######################################################
+
+# Fit the model with re-scaled predictor variables
+
+allbiodiversity_oakland_model <- glm(allbiodiversity_oakland$total_Richness ~ Final_CLN2 + offset(allbiodiversity_oakland_offset), 
+             family = "poisson", 
+             data = dm_oak)
+
+allbiodiversity_sf_model <- glm(allbiodiversity_sf$total_Richness ~ Final_CLN2 + offset(allbiodiversity_sf_offset), 
+             family = "poisson", 
+             data = dm_sf)
+
+allbiodiversity_sj_model <- glm(allbiodiversity_sj$total_Richness ~ Final_CLN2 + offset(allbiodiversity_sj_offset), 
+             family = "poisson", 
+             data = dm_sj)
+
+summary(allbiodiversity_oakland_model)
+summary(allbiodiversity_sf_model)
+summary(allbiodiversity_sj_model)
+
+#### TRY TO PLOT OAKLAND
+
+#get summary stats for the model
+biodiv_oak_sum <- summary(allbiodiversity_oakland_model)
+
+# Extract coefficients
+biodiv_oak_coeff <- biodiv_oak_sum$coefficients
+
+# Calculate confidence intervals
+biodiv_oak_interv <- confint(allbiodiversity_oakland_model)
+
+# Exponentiate the coefficients and confidence intervals to get them on the response scale
+biodiv_oak_coeff_exp <- exp(biodiv_oak_coeff[, "Estimate"])
+biodiv_oak_interv_exp <- exp(biodiv_oak_interv)
+
+#get predicted values from model
+biodiv_oak_predictions <- predict(allbiodiversity_oakland_model, type = "response") # get it on the response scale
+
+# Create a data frame with predictions and original data
+biodiv_oak_df <- data.frame(
+  Final_CLN2 = dm_oak$Final_CLN2,
+  predictions = biodiv_oak_predictions
+)
+
+aggregate(predictions ~ Final_CLN2, biodiv_oak_df, mean)
+
+# Aggregate predictions by category
+biodiv_oak_df_summary <- biodiv_oak_df %>%
+  group_by(Final_CLN2) %>%
+  dplyr::summarise(
+    Average = mean(predictions, na.rm = TRUE),
+    `2.5%` = quantile(predictions, 0.025, na.rm = TRUE),
+    `97.5%` = quantile(predictions, 0.975, na.rm = TRUE)
+  )
+
+print(biodiv_oak_df_summary)
+
+###PLOT
+ggplot(biodiv_oak_df_summary, aes(x = Final_CLN2, y = Average, fill = Final_CLN2)) + 
+  geom_bar(stat = "identity", position = "dodge", color = "black") + # Bar plots
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`), width = 0.2) + # Error bars
+  labs(
+    x = "Category",
+    y = "Average Richness",
+    title = "Oakland Species Richness"
+  ) + 
+  scale_fill_manual(values = c("C" = "#51A3A4", "All" = "#668C40")) + # Custom colors for categories
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+##ok it plotted, but I think ALL should be higher than C based on the model summary, where ALL had a positive estimate. Lets try plotting the way Mason sent code for forever ago while doing the redlining + biodiversity work
+
+##use emmeans
+emmeans_results_oakland <- emmeans(allbiodiversity_oakland_model, ~ Final_CLN2, type = "response")
+emmeans_df_oakland <- as.data.frame(emmeans_results_oakland)
+
+aggregate(rate ~ Final_CLN2, emmeans_df_oakland, mean)
+
+ggplot(emmeans_df_oakland, aes(x = Final_CLN2, y = rate, fill = Final_CLN2)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  geom_errorbar(aes(ymin = rate - SE, ymax = rate + SE),
+                width = 0.2, position = position_dodge(0.9)) +
+  scale_fill_manual(
+    values = c("#51A3A4", "#668C40"),
+    guide = "none"  # Hide legend
+  ) +
+  labs(x = "CLN Categorization",
+       y = "Estimated Species Richness (Original Scale)") +
+  theme_classic()
+
+pairs(emmeans_results_oakland)
+
+emmeans(allbiodiversity_oakland_model, pairwise ~ Final_CLN2) #on log scale
+exp(-2.44) #0.08716085
+exp(-1.92) #0.146607
+
+##this plot is correct. potentially, we could expand the scale by 10 or 100 for visualization purposes?
+
+
+## SF
+
+##use emmeans
+emmeans_results_sf <- emmeans(allbiodiversity_sf_model, ~ Final_CLN2, type = "response")
+emmeans_df_sf <- as.data.frame(emmeans_results_sf)
+
+aggregate(rate ~ Final_CLN2, emmeans_df_sf, mean)
+
+ggplot(emmeans_df_sf, aes(x = Final_CLN2, y = rate, fill = Final_CLN2)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  geom_errorbar(aes(ymin = rate - SE, ymax = rate + SE),
+                width = 0.2, position = position_dodge(0.9)) +
+  scale_fill_manual(
+    values = c("#51A3A4", "#668C40"),
+    guide = "none"  # Hide legend
+  ) +
+  labs(x = "CLN Categorization",
+       y = "Estimated Species Richness (Original Scale)") +
+  theme_classic()
+
+pairs(emmeans_results_sf)
+
+emmeans(allbiodiversity_sf_model, pairwise ~ Final_CLN2) 
+
+##SJ
+
+##use emmeans
+emmeans_results_sj <- emmeans(allbiodiversity_sj_model, ~ Final_CLN2, type = "response")
+emmeans_df_sj <- as.data.frame(emmeans_results_sj)
+
+aggregate(rate ~ Final_CLN2, emmeans_df_sj, mean)
+
+ggplot(emmeans_df_sj, aes(x = Final_CLN2, y = rate, fill = Final_CLN2)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  geom_errorbar(aes(ymin = rate - SE, ymax = rate + SE),
+                width = 0.2, position = position_dodge(0.9)) +
+  scale_fill_manual(
+    values = c("#51A3A4", "#668C40"),
+    guide = "none"  # Hide legend
+  ) +
+  labs(x = "CLN Categorization",
+       y = "Estimated Species Richness (Original Scale)") +
+  theme_classic()
+
+pairs(emmeans_results_sj)
+
+emmeans(allbiodiversity_sj_model, pairwise ~ Final_CLN2) 
+
+
+```
+
+
+#PLANT
+
+
+```{r}
+#######################################################
+############################################
+#
+#                 PLANTS
+#
+#######################################################
+
+all_plant_biodiversity_oakland_model <- glm(all_plant_biodiversity_oakland$total_Richness ~ Final_CLN2 + offset(all_plant_biodiversity_oakland_offset), 
+             family = "poisson", 
+             data = dm_plant_oak)
+
+all_plant_biodiversity_sf_model <- glm(all_plant_biodiversity_sf$total_Richness ~ Final_CLN2 + offset(all_plant_biodiversity_sf_offset), 
+             family = "poisson", 
+             data = dm_plant_sf)
+
+all_plant_biodiversity_sj_model <- glm(all_plant_biodiversity_sj$total_Richness ~ Final_CLN2 + offset(all_plant_biodiversity_sj_offset), 
+             family = "poisson", 
+             data = dm_plant_sj)
+
+
+#get summary stats for the model
+summary(all_plant_biodiversity_oakland_model)
+
+#####PLOT
+
+# Obtain the estimated marginal means on the response (original) scale (OAKLAND)
+emmeans_results_oakland_plant <- emmeans(all_plant_biodiversity_oakland_model, ~ Final_CLN2, type = "response")
+emmeans_df_oakland_plant <- as.data.frame(emmeans_results_oakland_plant)
+
+ggplot(emmeans_df_oakland_plant, aes(x = Final_CLN2, y = rate, fill = Final_CLN2)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  geom_errorbar(aes(ymin = rate - SE, ymax = rate + SE),
+                width = 0.2, position = position_dodge(0.9)) +
+  scale_fill_manual(
+    values = c("#51A3A4", "#668C40"),
+    guide = "none"  # Hide legend
+  ) +
+  labs(x = "CLN Categorization",
+       y = "Estimated Species Richness (Original Scale)") +
+  theme_classic()
+
+pairs(emmeans_results_oakland_plant)
+
+emmeans(all_plant_biodiversity_oakland_model, pairwise ~ Final_CLN2) #on log scale
+exp(-2.34) #0.09632764
+exp(-3.06) #0.146607
+exp(0.72) #2.054433 # 2 more species
+
+
+# Obtain the estimated marginal means on the response (original) scale (SAN FRANCISCO)
+emmeans_results_sf_plant <- emmeans(all_plant_biodiversity_sf_model, ~ Final_CLN2, type = "response")
+emmeans_df_sf_plant <- as.data.frame(emmeans_results_sf_plant)
+
+ggplot(emmeans_df_sf_plant, aes(x = Final_CLN2, y = rate, fill = Final_CLN2)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  geom_errorbar(aes(ymin = rate - SE, ymax = rate + SE),
+                width = 0.2, position = position_dodge(0.9)) +
+  scale_fill_manual(
+    values = c("#51A3A4", "#668C40"),
+    guide = "none"  # Hide legend
+  ) +
+  labs(x = "CLN Categorization",
+       y = "Estimated Species Richness (Original Scale)") +
+  theme_classic()
+
+pairs(emmeans_results_sf_plant)
+
+emmeans(all_plant_biodiversity_sf_model, pairwise ~ Final_CLN2) #on log scale
+exp(-5.38) #0.08716085
+exp(-4.95) #0.146607
+exp(0.432) ##difference
+
+
+# Obtain the estimated marginal means on the response (original) scale (SAN JOSE)
+emmeans_results_sj_plant <- emmeans(all_plant_biodiversity_sj_model, ~ Final_CLN2, type = "response")
+emmeans_df_sj_plant <- as.data.frame(emmeans_results_sj_plant)
+
+ggplot(emmeans_df_sj_plant, aes(x = Final_CLN2, y = rate, fill = Final_CLN2)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  geom_errorbar(aes(ymin = rate - SE, ymax = rate + SE),
+                width = 0.2, position = position_dodge(0.9)) +
+  scale_fill_manual(
+    values = c("#51A3A4", "#668C40"),
+    guide = "none"  # Hide legend
+  ) +
+  labs(x = "CLN Categorization",
+       y = "Estimated Species Richness (Original Scale)") +
+  theme_classic()
+
+pairs(emmeans_results_sj)
+
+emmeans(all_plant_biodiversity_sj_model, pairwise ~ Final_CLN2) #on log scale
+exp(-3.06) #0.0468877
+exp(-3.57) #0.02815585
+exp(0.517) #1.676989
+```
+
+##FUNGI
+
+```{r}
+#######################################################
+############################################
+#
+#                 FUNGI
+#
+#######################################################
+
+all_fungi_biodiversity_oakland_model <- glm(all_fungi_biodiversity_oakland$total_Richness ~ Final_CLN2 + offset(all_fungi_biodiversity_oakland_offset), 
+             family = "poisson", 
+             data = dm_fungi_oak)
+
+all_fungi_biodiversity_sf_model <- glm(all_fungi_biodiversity_sf$total_Richness ~ Final_CLN2 + offset(all_fungi_biodiversity_sf_offset), 
+             family = "poisson", 
+             data = dm_fungi_sf)
+
+all_fungi_biodiversity_sj_model <- glm(all_fungi_biodiversity_sj$total_Richness ~ Final_CLN2 + offset(all_fungi_biodiversity_sj_offset), 
+             family = "poisson", 
+             data = dm_fungi_sj)
+
+
+#get summary stats for the model
+summary(all_fungi_biodiversity_oakland_model)
+
+#####PLOT
+
+# Obtain the estimated marginal means on the response (original) scale (OAKLAND)
+emmeans_results_oakland_fungi <- emmeans(all_fungi_biodiversity_oakland_model, ~ Final_CLN2, type = "response")
+emmeans_df_oakland_fungi <- as.data.frame(emmeans_results_oakland_fungi)
+
+ggplot(emmeans_df_oakland_fungi, aes(x = Final_CLN2, y = rate, fill = Final_CLN2)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  geom_errorbar(aes(ymin = rate - SE, ymax = rate + SE),
+                width = 0.2, position = position_dodge(0.9)) +
+  scale_fill_manual(
+    values = c("#51A3A4", "#668C40"),
+    guide = "none"  # Hide legend
+  ) +
+  labs(x = "CLN Categorization",
+       y = "Estimated Species Richness (Original Scale)") +
+  theme_classic()
+
+pairs(emmeans_results_oakland_fungi) #1.56 more species 
+
+emmeans(all_fungi_biodiversity_oakland_model, pairwise ~ Final_CLN2) #on log scale
+exp(-2.44) #0.08716085
+exp(-1.92) #0.146607
+
+
+
+# Obtain the estimated marginal means on the response (original) scale (SAN FRANCISCO)
+emmeans_results_sf_fungi <- emmeans(all_fungi_biodiversity_sf_model, ~ Final_CLN2, type = "response")
+emmeans_df_sf_fungi <- as.data.frame(emmeans_results_sf_fungi)
+
+ggplot(emmeans_df_sf_fungi, aes(x = Final_CLN2, y = rate, fill = Final_CLN2)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  geom_errorbar(aes(ymin = rate - SE, ymax = rate + SE),
+                width = 0.2, position = position_dodge(0.9)) +
+  scale_fill_manual(
+    values = c("#51A3A4", "#668C40"),
+    guide = "none"  # Hide legend
+  ) +
+  labs(x = "CLN Categorization",
+       y = "Estimated Species Richness (Original Scale)") +
+  theme_classic()
+
+pairs(emmeans_results_sf_fungi) #1.42 species
+
+emmeans(all_fungi_biodiversity_sf_model, pairwise ~ Final_CLN2) #on log scale
+exp(-5.523) #0.08716085
+exp(-5.094) #0.146607
+exp(-0.429)
+
+
+
+# Obtain the estimated marginal means on the response (original) scale (SAN JOSE)
+emmeans_results_sj_fungi <- emmeans(all_fungi_biodiversity_sj_model, ~ Final_CLN2, type = "response")
+emmeans_df_sj_fungi <- as.data.frame(emmeans_results_sj_fungi)
+
+ggplot(emmeans_df_sj_fungi, aes(x = Final_CLN2, y = rate, fill = Final_CLN2)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  geom_errorbar(aes(ymin = rate - SE, ymax = rate + SE),
+                width = 0.2, position = position_dodge(0.9)) +
+  scale_fill_manual(
+    values = c("#51A3A4", "#668C40"),
+    guide = "none"  # Hide legend
+  ) +
+  labs(x = "CLN Categorization",
+       y = "Estimated Species Richness (Original Scale)") +
+  theme_classic()
+
+pairs(emmeans_results_sj) #1.22
+
+emmeans(all_fungi_biodiversity_sj_model, pairwise ~ Final_CLN2) #on log scale
+exp(-3.5) #0.08716085
+exp(-3.7) #0.146607
+
+#######################################################
+############################################
+#
+#                 ANIMALS
+#
+#######################################################
+
+
+all_animal_biodiversity_oakland_model <- glm(all_animal_biodiversity_oakland$total_Richness ~ Final_CLN2 + offset(all_animal_biodiversity_oakland_offset), 
+             family = "poisson", 
+             data = dm_animal_oak)
+
+all_animal_biodiversity_sf_model <- glm(all_animal_biodiversity_sf$total_Richness ~ Final_CLN2 + offset(all_animal_biodiversity_sf_offset), 
+             family = "poisson", 
+             data = dm_animal_sf)
+
+all_animal_biodiversity_sj_model <- glm(all_animal_biodiversity_sj$total_Richness ~ Final_CLN2 + offset(all_animal_biodiversity_sj_offset), 
+             family = "poisson", 
+             data = dm_animal_sj)
+
+
+#get summary stats for the model
+summary(all_animal_biodiversity_oakland_model)
+
+#####PLOT
+
+# Obtain the estimated marginal means on the response (original) scale (OAKLAND)
+emmeans_results_oakland_animal <- emmeans(all_animal_biodiversity_oakland_model, ~ Final_CLN2, type = "response")
+emmeans_df_oakland_animal <- as.data.frame(emmeans_results_oakland_animal)
+
+ggplot(emmeans_df_oakland_animal, aes(x = Final_CLN2, y = rate, fill = Final_CLN2)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  geom_errorbar(aes(ymin = rate - SE, ymax = rate + SE),
+                width = 0.2, position = position_dodge(0.9)) +
+  scale_fill_manual(
+    values = c("#51A3A4", "#668C40"),
+    guide = "none"  # Hide legend
+  ) +
+  labs(x = "CLN Categorization",
+       y = "Estimated Species Richness (Original Scale)") +
+  theme_classic()
+
+pairs(emmeans_results_oakland_animal) #1.34
+
+emmeans(all_animal_biodiversity_oakland_model, pairwise ~ Final_CLN2) #on log scale
+exp(-2.44) #0.08716085
+exp(-1.92) #0.146607
+
+
+
+# Obtain the estimated marginal means on the response (original) scale (SAN FRANCISCO)
+emmeans_results_sf_animal <- emmeans(all_animal_biodiversity_sf_model, ~ Final_CLN2, type = "response")
+emmeans_df_sf_animal <- as.data.frame(emmeans_results_sf_animal)
+
+ggplot(emmeans_df_sf_animal, aes(x = Final_CLN2, y = rate, fill = Final_CLN2)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  geom_errorbar(aes(ymin = rate - SE, ymax = rate + SE),
+                width = 0.2, position = position_dodge(0.9)) +
+  scale_fill_manual(
+    values = c("#51A3A4", "#668C40"),
+    guide = "none"  # Hide legend
+  ) +
+  labs(x = "CLN Categorization",
+       y = "Estimated Species Richness (Original Scale)") +
+  theme_classic()
+
+pairs(emmeans_results_sf_animal) #1.57
+
+emmeans(all_animal_biodiversity_sf_model, pairwise ~ Final_CLN2) #on log scale
+exp(-5.523) #0.08716085
+exp(-5.094) #0.146607
+exp(-0.429)
+
+
+
+# Obtain the estimated marginal means on the response (original) scale (SAN JOSE)
+emmeans_results_sj_animal <- emmeans(all_animal_biodiversity_sj_model, ~ Final_CLN2, type = "response")
+emmeans_df_sj_animal <- as.data.frame(emmeans_results_sj_animal)
+
+ggplot(emmeans_df_sj_animal, aes(x = Final_CLN2, y = rate, fill = Final_CLN2)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  geom_errorbar(aes(ymin = rate - SE, ymax = rate + SE),
+                width = 0.2, position = position_dodge(0.9)) +
+  scale_fill_manual(
+    values = c("#51A3A4", "#668C40"),
+    guide = "none"  # Hide legend
+  ) +
+  labs(x = "CLN Categorization",
+       y = "Estimated Species Richness (Original Scale)") +
+  theme_classic()
+
+pairs(emmeans_results_sj) #1.22
+
+emmeans(all_animal_biodiversity_sj_model, pairwise ~ Final_CLN2) #on log scale
+exp(-3.5) #0.08716085
+exp(-3.7) #0.146607
+
+```
+
+
