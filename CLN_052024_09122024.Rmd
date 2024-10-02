@@ -19,7 +19,9 @@ knitr::opts_chunk$set(echo = TRUE)
 # setwd("/Users/cesarestien/Desktop/Projects/BayArea_Conservation")
 
 #install packages needed
-X <- c("cowplot", "ggplot2","dplyr", "car", "olsrr", "tidyverse", "RColorBrewer", "reshape2", "egg", "ecodist", "corrplot", "vegan", "glmmTMB", "lme4", "glmmTMB", "lmerTest", "MASS", "emmeans", "performance", "rptR", "coin")
+X <- c("cowplot", "ggplot2","dplyr", "car", "olsrr", "tidyverse", "RColorBrewer", "reshape2", "egg", "ecodist", "corrplot", "vegan", 
+       # "glmmTMB", 
+       "lme4", "lmerTest", "MASS", "emmeans", "performance", "rptR", "coin")
 
 if (length(setdiff(X, rownames(installed.packages()))) > 0) {
   install.packages(setdiff(X, rownames(installed.packages())))
@@ -2223,7 +2225,7 @@ aggregate(total_Richness ~ Final_CLN2 * City, combined_fungi_biodiversity_final,
 
 
 ##VISUALIZE
-
+Visualize sums of the species richness of greenspaces within each city
 
 ```{r}
 
@@ -2367,6 +2369,7 @@ dm_fungi <- dm_fungi %>%
 
 #Next, we scale our covariates so they have a mean of 0 and a standard deviation of 1. Doing so let's use compare regression coefficients to one another so that larger ones = larger effect!
 
+# Avery: These are identical to the previous dm values.
 dm <- dm %>% 
   dplyr::mutate_if(
     is.numeric,
@@ -2642,6 +2645,7 @@ allbiodiversity_sj_model <- glm(allbiodiversity_sj$total_Richness ~ Final_CLN2 +
 summary(allbiodiversity_oakland_model)
 summary(allbiodiversity_sf_model)
 summary(allbiodiversity_sj_model)
+# Avery: I don't see any red flags above, but I think the culprit might be between here and the next plot
 
 #### TRY TO PLOT OAKLAND
 
