@@ -16,7 +16,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r cars}
 
 #########set wd
-setwd("/Users/cesarestien/Desktop/Projects/BayArea_Conservation")
+# setwd("/Users/cesarestien/Desktop/Projects/BayArea_Conservation")
 
 #install packages needed
 X <- c("cowplot", "ggplot2","dplyr", "car", "olsrr", "tidyverse", "RColorBrewer", "reshape2", "egg", "ecodist", "corrplot", "vegan", "glmmTMB", "lme4", "glmmTMB", "lmerTest", "MASS", "emmeans", "performance", "rptR", "coin")
